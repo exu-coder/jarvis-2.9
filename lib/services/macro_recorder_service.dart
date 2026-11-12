@@ -18,7 +18,7 @@ class MacroRecorderService extends ChangeNotifier {
   MacroRecorderService._();
   static final MacroRecorderService instance = MacroRecorderService._();
 
-  static const _channel = MethodChannel('com.privateagent/accessibility');
+  static const _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   bool _isRecording = false;
   bool get isRecording => _isRecording;

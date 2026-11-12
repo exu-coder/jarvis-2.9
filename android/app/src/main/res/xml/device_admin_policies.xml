@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Device administrator policies requested by JARVIS.
+
+  Keep this list minimal: every policy listed here is surfaced to the user in the
+  Android "Activate device admin app" confirmation dialog. Only policies that the
+  assistant can actually exercise should be declared.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <!-- Allows the assistant to lock the screen on request ("lock the phone"). -->
+        <force-lock />
+        <!-- Allows wiping device data only if the user explicitly configured it. -->
+        <wipe-data />
+        <!-- Allows watching login attempts for the Sentry anti-theft protocol. -->
+        <watch-login />
+    </uses-policies>
+</device-admin>

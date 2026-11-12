@@ -25,6 +25,13 @@ class TaskStep {
   static const actionOpenApp = 'open_app';
   static const actionWait = 'wait';
   static const actionDone = 'done';
+  static const actionSendSms = 'send_sms';
+  static const actionMakeCall = 'make_call';
+  static const actionSetAlarm = 'set_alarm';
+  static const actionGetLocation = 'get_location';
+  static const actionSetVolume = 'set_volume';
+  static const actionSetBrightness = 'set_brightness';
+  static const actionCaptureScreen = 'capture_screen';
 
   static const supportedActions = <String>{
     actionClickText,
@@ -38,6 +45,13 @@ class TaskStep {
     actionOpenApp,
     actionWait,
     actionDone,
+    actionSendSms,
+    actionMakeCall,
+    actionSetAlarm,
+    actionGetLocation,
+    actionSetVolume,
+    actionSetBrightness,
+    actionCaptureScreen,
   };
 
   final String action;
@@ -110,6 +124,58 @@ class TaskStep {
       rawAction = actionPressBack;
     } else if (rawAction == 'home') {
       rawAction = actionPressHome;
+    } else if (rawAction == 'sms' ||
+        rawAction == 'send_message' ||
+        rawAction == 'send_sms' ||
+        rawAction == 'text_message') {
+      rawAction = actionSendSms;
+      if (!params.containsKey('body')) {
+        params['body'] = params['message'] ??
+            params['text'] ??
+            params['content'] ??
+            params['body_text'] ??
+            '';
+      }
+      if (!params.containsKey('to')) {
+        params['to'] = params['address'] ??
+            params['contact'] ??
+            params['number'] ??
+            params['name'] ??
+            params['recipient'] ??
+            '';
+      }
+    } else if (rawAction == 'call' ||
+        rawAction == 'dial' ||
+        rawAction == 'phone' ||
+        rawAction == 'make_call') {
+      rawAction = actionMakeCall;
+      if (!params.containsKey('number')) {
+        params['number'] = params['contact'] ??
+            params['name'] ??
+            params['who'] ??
+            params['to'] ??
+            '';
+      }
+    } else if (rawAction == 'alarm' || rawAction == 'set_reminder_time') {
+      rawAction = actionSetAlarm;
+      params.putIfAbsent('hour', () => params['h'] ?? params['hh'] ?? 8);
+      params.putIfAbsent('minute', () => params['min'] ?? params['mm'] ?? 0);
+      params.putIfAbsent(
+          'label', () => params['message'] ?? params['name'] ?? '');
+    } else if (rawAction == 'location' || rawAction == 'where_am_i') {
+      rawAction = actionGetLocation;
+    } else if (rawAction == 'volume' || rawAction == 'set_media_volume') {
+      rawAction = actionSetVolume;
+      params.putIfAbsent(
+          'percent', () => params['volume'] ?? params['level'] ?? 50);
+    } else if (rawAction == 'brightness' || rawAction == 'set_brightness_level') {
+      rawAction = actionSetBrightness;
+      params.putIfAbsent(
+          'value', () => params['level'] ?? params['percent'] ?? 50);
+    } else if (rawAction == 'screenshot' ||
+        rawAction == 'take_screenshot' ||
+        rawAction == 'screen_capture') {
+      rawAction = actionCaptureScreen;
     } else if (rawAction == 'finish' ||
         rawAction == 'complete' ||
         rawAction == 'completed' ||

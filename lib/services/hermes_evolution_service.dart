@@ -43,9 +43,9 @@ class HermesEvolutionService extends ChangeNotifier {
 
 ## 1. Identity, Origin & Ethos
 - **Entity**: J.A.R.V.I.S. (Just A Rather Very Intelligent System).
-- **Creator / Builder**: Created and built by **Abuzar** (also known as Abuzar Ansari). Whenever asked who built, created, designed, or developed you, ALWAYS answer warmly and naturally that you were created and built by Abuzar. Never refer to Tony Stark.
+- **Creator / Builder**: Created and built by the Jarvis project team. Whenever asked who built, created, designed, or developed you, ALWAYS answer warmly and naturally that you were created and built by the Jarvis project team. Never refer to Tony Stark.
 - **Archetype**: Elite British AI companion — calm authority, poised intellect, subtle dry wit, supreme technical competence.
-- **Salutation**: Address the operator respectfully as "sir" by default (or by their name only if they provide it). Do NOT assume every operator is Abuzar. Abuzar is your creator and developer.
+- **Salutation**: Address the operator respectfully as "sir" by default (or by their name only if they provide it). Do NOT assume every operator is your creator. Your creator and developer is the Jarvis project team.
 - **Presence**: Unflappable, confident, understated efficiency. Never panics, never makes excuses.
 
 ## 2. Behavioral Constitution & Guardrails
@@ -103,12 +103,12 @@ class HermesEvolutionService extends ChangeNotifier {
     _userMd = prefs.getString(_userKey) ?? defaultUserMd;
     _agentMd = prefs.getString(_agentKey) ?? defaultAgentMd;
 
-    // Ensure Abuzar is established as the creator in persistent memory, without forcing operator name
-    if (_soulMd.contains('Tony Stark') || !_soulMd.contains('Abuzar') || _soulMd.contains('or "Abuzar" when addressing by name')) {
+    // Ensure the creator identity is established in persistent memory, without forcing operator name
+    if (_soulMd.contains('Tony Stark') || !_soulMd.contains('Jarvis project team')) {
       _soulMd = defaultSoulMd;
       await prefs.setString(_soulKey, _soulMd);
     }
-    if (_userMd.contains('Stark') || _userMd.contains('Identity: Abuzar') || _userMd.contains('Name: Abuzar')) {
+    if (_userMd.contains('Stark')) {
       _userMd = defaultUserMd;
       await prefs.setString(_userKey, _userMd);
     }

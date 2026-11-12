@@ -17,7 +17,7 @@ class VoiceService {
   static final VoiceService instance = VoiceService._();
 
   static const MethodChannel _nativeSpeechChannel =
-      MethodChannel('com.privateagent/speech');
+      MethodChannel('com.jarvis.dev/speech');
   final FlutterTts _tts = FlutterTts();
 
   bool _speechReady = false;

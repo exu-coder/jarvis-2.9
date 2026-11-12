@@ -12,7 +12,7 @@ class ChargingTelemetryService extends ChangeNotifier {
   ChargingTelemetryService._();
 
   static final ChargingTelemetryService instance = ChargingTelemetryService._();
-  static const MethodChannel _channel = MethodChannel('com.privateagent/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   bool _isCharging = false;
   int _batteryLevel = -1;

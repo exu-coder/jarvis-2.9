@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">PrivateAgent</string>
-    <string name="accessibility_service_label">PrivateAgent Screen Control</string>
-    <string name="accessibility_service_description">PrivateAgent uses this service to read the current screen layout and perform taps, swipes, scrolling and typing on your behalf when you ask it to automate a task. No screen content leaves your device except when sent to the AI provider you configured. Disable this service at any time to stop all automation.</string>
+    <string name="app_name">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒</string>
+    <string name="accessibility_service_label">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 Screen Control</string>
+    <string name="accessibility_service_description">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 uses this service to read the current screen layout and perform taps, swipes, scrolling and typing on your behalf when you ask it to automate a task. No screen content leaves your device except when sent to the AI provider you configured. Disable this service at any time to stop all automation.</string>
+
+    <string name="device_admin_label">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 Device Control</string>
+    <string name="device_admin_description">Lets 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 lock the screen and monitor login attempts when you ask it to, and when the Sentry anti-theft protocol is armed.</string>
+
+    <string name="agent_service_channel_name">Agent Core</string>
+    <string name="agent_service_channel_description">Keeps the 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 agent alive while it works in the background.</string>
+    <string name="agent_service_title">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 agent active</string>
+    <string name="agent_service_text">Running background tasks and device protocols.</string>
+
+    <string name="location_service_channel_name">Location Tracking</string>
+    <string name="location_service_title">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 location tracking</string>
+    <string name="location_service_text">Sharing your position with the assistant while a location task runs.</string>
+
+    <string name="screen_capture_channel_name">Screen Capture</string>
+    <string name="screen_capture_title">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 screen capture</string>
+    <string name="screen_capture_text">Capturing the screen for the task you requested.</string>
+
+    <string name="connected_device_channel_name">Connected Devices</string>
+    <string name="connected_device_title">𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 connected devices</string>
+    <string name="connected_device_text">Monitoring Bluetooth and USB devices.</string>
 </resources>

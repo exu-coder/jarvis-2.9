@@ -30,7 +30,7 @@ class JarvisToolsService {
   static final JarvisToolsService instance = JarvisToolsService._();
 
   static const MethodChannel _channel =
-      MethodChannel('com.privateagent/accessibility');
+      MethodChannel('com.jarvis.dev/accessibility');
 
   final http.Client _client = http.Client();
 

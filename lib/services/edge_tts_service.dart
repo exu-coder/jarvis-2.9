@@ -19,7 +19,7 @@ class EdgeTtsService {
   static final EdgeTtsService instance = EdgeTtsService._();
 
   static const MethodChannel _channel =
-      MethodChannel('com.privateagent/accessibility');
+      MethodChannel('com.jarvis.dev/accessibility');
 
   static const String _trustedClientToken = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
   static const String _secMsGecVersion = '2-143.0.3650.75';

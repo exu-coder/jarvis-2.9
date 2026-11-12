@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>𝐉</title>
+<style>
+  /* ============================================================
+     𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 — collapsed bubble orb (64×64, transparent bg)
+     Loaded by BubbleOverlayService while the overlay window is
+     collapsed. Taps/drags are handled natively by the service;
+     this page is purely visual.
+     ============================================================ */
+  :root {
+    --cy:       #22d3ee;
+    --cy-glow:  rgba(34, 211, 238, .35);
+    --gold:     #fbbf24;
+    --font-display: "Source Serif 4", Georgia, serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent; /* translucent overlay window */
+    overflow: hidden;
+    color-scheme: dark;
+  }
+  .orb {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 64px; height: 64px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background:
+      radial-gradient(circle at 35% 30%, #d9fbff 0 10%, var(--cy) 40%, #0891b2 70%, #164e63 100%);
+    box-shadow:
+      0 0 22px var(--cy-glow),
+      0 0 60px rgba(34,211,238,.18),
+      inset 0 0 14px rgba(255,255,255,.5);
+    user-select: none;
+  }
+  .orb::before {
+    content: "";
+    position: absolute; inset: -7px;
+    border-radius: 50%;
+    border: 1px solid rgba(34,211,238,.4);
+    pointer-events: none;
+  }
+  .orb::after {
+    content: "";
+    position: absolute; inset: -15px;
+    border-radius: 50%;
+    border: 1px dashed rgba(251,191,36,.35);
+    pointer-events: none;
+    animation: spin 10s linear infinite;
+  }
+  .orb.listening::before { box-shadow: 0 0 26px var(--cy-glow); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .glyph {
+    font-family: var(--font-display);
+    font-weight: 700; font-size: 15px; letter-spacing: 1px;
+    color: #04222b;
+    text-shadow: 0 0 6px rgba(255,255,255,.6);
+  }
+  .badge {
+    position: absolute; top: -4px; right: -4px;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 999px;
+    background: var(--gold);
+    color: #241a02;
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 10px; line-height: 18px; text-align: center;
+    box-shadow: 0 0 10px rgba(251,191,36,.5);
+    display: none;
+  }
+  .badge.show { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    .orb::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="orb" id="orb">
+    <span class="glyph">𝐉</span>
+    <span class="badge" id="badge">1</span>
+  </div>
+<script>
+  // Host hooks: window.setListening(bool), window.setUnread(count)
+  window.setListening = function (on) {
+    document.getElementById('orb').classList.toggle('listening', !!on);
+  };
+  window.setUnread = function (n) {
+    var b = document.getElementById('badge');
+    if (!n || n <= 0) { b.classList.remove('show'); return; }
+    b.textContent = n > 9 ? '9+' : String(n);
+    b.classList.add('show');
+  };
+</script>
+</body>
+</html>

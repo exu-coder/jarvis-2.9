@@ -1,0 +1,1535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#01060c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>J.A.R.V.I.S. · chat</title>
+  <style>
+    :root {
+      --cy: #42e8ff;
+      --cy-dim: rgba(66, 232, 255, .35);
+      --cy-faint: rgba(66, 232, 255, .12);
+      --amber: #ffb74a;
+      --bg: #01060c;
+      --panel-bg: rgba(1, 12, 22, .92);
+      --font-serif: "Times New Roman", Times, Baskerville, Georgia, serif;
+      --btn-size: 56px;
+      --audio-energy: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      overscroll-behavior: none;
+      /* pan-y: lets the chat transcript scroll on touch while keeping
+         the HUD free of pinch-zoom / horizontal panning */
+      touch-action: pan-y;
+    }
+
+    body {
+      font-family: var(--font-serif);
+      color: var(--cy);
+      letter-spacing: .06em;
+      -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none;
+      user-select: none;
+      position: fixed;
+      inset: 0;
+    }
+
+    /* ---------- stage ---------- */
+    #stage {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding:
+        calc(env(safe-area-inset-top, 0px) + 8px)
+        calc(env(safe-area-inset-right, 0px) + 10px)
+        calc(env(safe-area-inset-bottom, 0px) + 8px)
+        calc(env(safe-area-inset-left, 0px) + 10px);
+      z-index: 1;
+    }
+
+    /* ---------- background layers ---------- */
+    #bg {
+      position: absolute; inset: 0;
+      background-image: url("background.gif");
+      background-size: cover;
+      background-position: center;
+      opacity: .55;
+      filter: saturate(.7) contrast(1.1) hue-rotate(-8deg);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #bg-fallback {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 50%, rgba(20, 90, 130, .55), transparent 70%),
+        radial-gradient(ellipse 120% 80% at 50% 120%, rgba(10, 60, 95, .5), transparent 65%),
+        conic-gradient(from 0deg at 50% 50%, rgba(66, 232, 255, .05), transparent 25%, rgba(66, 232, 255, .05) 50%, transparent 75%, rgba(66, 232, 255, .05));
+      animation: slowspin 90s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes slowspin { to { transform: rotate(360deg) scale(1.15); } }
+
+    #grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(var(--cy-faint) 1px, transparent 1px),
+        linear-gradient(90deg, var(--cy-faint) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: .22;
+      mask-image: radial-gradient(ellipse 65% 60% at 50% 50%, #000 20%, transparent 78%);
+      -webkit-mask-image: radial-gradient(ellipse 65% 60% at 50% 50%, #000 20%, transparent 78%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #vignette {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 80% 70% at 50% 50%, transparent 35%, rgba(1, 6, 12, .75) 80%, #01060c 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #scanlines {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px);
+      mix-blend-mode: multiply;
+      opacity: .45;
+      z-index: 10;
+    }
+
+    #flicker {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background: rgba(66, 232, 255, .03);
+      animation: flick 6s steps(1) infinite;
+      z-index: 9;
+    }
+
+    @keyframes flick {
+      0%, 97% { opacity: 0; }
+      97.5% { opacity: 1; }
+      98% { opacity: 0; }
+      98.6% { opacity: .7; }
+      99% { opacity: 0; }
+    }
+
+    /* ---------- HUD top ---------- */
+    #hud {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: clamp(8px, 2.4vw, 11px);
+      line-height: 1.7;
+      z-index: 8;
+      pointer-events: none;
+    }
+
+    #sys {
+      color: rgba(66, 232, 255, .55);
+      white-space: nowrap;
+    }
+
+    #sys span { color: #9fe9ff; }
+
+    #clock {
+      text-align: right;
+      color: rgba(66, 232, 255, .7);
+      white-space: nowrap;
+    }
+
+    #clock .big {
+      font-size: clamp(12px, 3.8vw, 20px);
+      color: #cdf6ff;
+      text-shadow: 0 0 12px rgba(66, 232, 255, .6);
+      letter-spacing: .1em;
+    }
+
+    #tz {
+      font-size: .62em;
+      letter-spacing: .24em;
+      opacity: .55;
+      margin-top: 1px;
+    }
+
+    /* ---------- core ---------- */
+    #core-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+      padding: 6px 0;
+    }
+
+    #core {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(66,232,255,.10), transparent 70%);
+    }
+
+    #core::before {
+      content: "";
+      position: absolute;
+      inset: -6%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(66,232,255,.28), transparent 65%);
+      filter: blur(14px);
+      z-index: 0;
+      animation: coreGlow 3.6s ease-in-out infinite;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+
+    @keyframes coreGlow {
+      0%, 100% {
+        opacity: calc(.65 + var(--audio-energy) * .35);
+        transform: scale(calc(1 + var(--audio-energy) * .14));
+      }
+      50% {
+        opacity: calc(1 + var(--audio-energy) * .3);
+        transform: scale(calc(1.06 + var(--audio-energy) * .16));
+      }
+    }
+
+    #core::after {
+      content: "";
+      position: absolute;
+      inset: -8%;
+      border-radius: 50%;
+      border: 1px dashed rgba(66,232,255,.35);
+      animation: spin 22s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+      will-change: transform;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg) scale(calc(1 + var(--audio-energy) * .06)); }
+      to   { transform: rotate(360deg) scale(calc(1 + var(--audio-energy) * .06)); }
+    }
+
+    #core-logo {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+      z-index: 2;
+      will-change: transform, box-shadow;
+      box-shadow:
+        0 0 0 2px rgba(66,232,255,.55),
+        0 0 24px rgba(66,232,255,.55),
+        0 0 60px rgba(66,232,255,.28),
+        inset 0 0 40px rgba(0,0,0,.35);
+    }
+
+    #core.no-logo {
+      background:
+        radial-gradient(circle at 40% 34%, #d9fbff 0 12%, var(--cy) 40%, #0891b2 70%, #164e63 100%);
+      box-shadow:
+        0 0 26px var(--cy-dim),
+        0 0 70px rgba(66,232,255,.22),
+        inset 0 0 22px rgba(255,255,255,.45);
+    }
+
+    /* ---------- bottom: wave + status ---------- */
+    #bottom {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: clamp(6px, 1.2vh, 14px);
+      z-index: 7;
+      pointer-events: none;
+      padding-bottom: calc(var(--btn-size) + 20px);
+    }
+
+    #wave {
+      width: min(92vw, 900px);
+      height: clamp(40px, 9vh, 110px);
+      position: relative;
+    }
+
+    #wave canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      filter: drop-shadow(0 0 8px rgba(66, 232, 255, .5));
+    }
+
+    #status {
+      text-align: center;
+      width: 100%;
+      min-height: 2em;
+    }
+
+    #statusText {
+      font-size: clamp(11px, 3.2vw, 20px);
+      font-weight: 400;
+      letter-spacing: .12em;
+      color: #dff9ff;
+      text-shadow: 0 0 14px rgba(66, 232, 255, .7);
+      min-height: 1.2em;
+    }
+
+    #caret {
+      display: inline-block;
+      width: .4em;
+      height: 1em;
+      background: var(--cy);
+      animation: blink 1s steps(1) infinite;
+      margin-left: .16em;
+      vertical-align: -0.12em;
+      box-shadow: 0 0 10px var(--cy);
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }
+
+    #listening {
+      margin-top: clamp(4px, 1vh, 12px);
+      font-size: clamp(7px, 2vw, 10px);
+      letter-spacing: .35em;
+      text-indent: .35em;
+      color: rgba(66, 232, 255, .55);
+    }
+
+    #listening b { color: var(--amber); font-weight: 400; }
+
+    .dot {
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--cy);
+      margin-right: 6px;
+      vertical-align: middle;
+      box-shadow: 0 0 8px var(--cy);
+      animation: breathe 1.8s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+
+    /* ---------- toast ---------- */
+    #toast {
+      position: absolute;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + var(--btn-size) + 28px);
+      transform: translateX(-50%) translateY(8px);
+      background: rgba(1, 10, 18, .9);
+      border: 1px solid rgba(66, 232, 255, .35);
+      color: #bff4ff;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-family: var(--font-serif);
+      font-size: clamp(8px, 2vw, 10px);
+      letter-spacing: .1em;
+      z-index: 13;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .35s ease, transform .35s ease;
+      max-width: 86vw;
+      text-align: center;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ---------- corners ---------- */
+    .corner {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(66, 232, 255, .35);
+      pointer-events: none;
+      z-index: 8;
+    }
+
+    .corner.tl { top: calc(env(safe-area-inset-top, 0px) + 5px); left: calc(env(safe-area-inset-left, 0px) + 5px); border-right: 0; border-bottom: 0; }
+    .corner.tr { top: calc(env(safe-area-inset-top, 0px) + 5px); right: calc(env(safe-area-inset-right, 0px) + 5px); border-left: 0; border-bottom: 0; }
+    .corner.bl { bottom: calc(env(safe-area-inset-bottom, 0px) + 5px); left: calc(env(safe-area-inset-left, 0px) + 5px); border-right: 0; border-top: 0; }
+    .corner.br { bottom: calc(env(safe-area-inset-bottom, 0px) + 5px); right: calc(env(safe-area-inset-right, 0px) + 5px); border-left: 0; border-top: 0; }
+
+    @media (max-width: 640px), (max-height: 480px) {
+      .corner { display: none; }
+    }
+
+    /* ---------- boot ---------- */
+    #boot {
+      position: fixed;
+      inset: 0;
+      background: #01060c;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 20px;
+      font-family: var(--font-serif);
+      font-size: clamp(9px, 2.4vw, 12px);
+      line-height: 1.9;
+      color: var(--cy);
+    }
+
+    #bootLog {
+      width: min(88vw, 440px);
+      max-height: 62vh;
+      overflow: hidden;
+    }
+
+    #bootLog div { opacity: 0; animation: fadein .25s forwards; }
+
+    @keyframes fadein { to { opacity: 1; } }
+
+    #boot.done { animation: bootout .9s ease forwards; }
+
+    @keyframes bootout { to { opacity: 0; visibility: hidden; } }
+
+    .ok { color: #5affa8; }
+
+    /* ---------- landscape tuning ---------- */
+    @media (orientation: landscape) {
+      #hud { font-size: clamp(7px, 1.5vh, 10px); }
+      #clock .big { font-size: clamp(11px, 3vh, 19px); }
+      #statusText { font-size: clamp(10px, 2.6vh, 18px); }
+      #listening { font-size: clamp(6px, 1.4vh, 9px); }
+      #wave { width: min(64vw, 900px); height: clamp(36px, 13vh, 110px); }
+      :root { --btn-size: 46px; }
+    }
+
+    /* ============================================================
+       FLOATING BUTTONS
+       ============================================================ */
+    #floating-controls {
+      position: fixed;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+      transform: translateX(-50%);
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    }
+
+    .btn {
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      cursor: pointer;
+      color: #b9ddff;
+      background: linear-gradient(145deg, #1b3858, #0b1728);
+      border: 1px solid #548fc477;
+      box-shadow: 0 6px 24px #0008, inset 0 0 16px #5caeff15;
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease, background .3s ease;
+      -webkit-tap-highlight-color: transparent;
+      font-family: var(--font-serif);
+      pointer-events: auto;
+      flex: 0 0 auto;
+      width: var(--btn-size);
+      height: var(--btn-size);
+      position: relative;
+    }
+
+    .btn:hover {
+      transform: translateY(-3px) scale(1.05);
+      box-shadow: 0 0 28px #399eff66;
+      border-color: #80c9ff;
+    }
+
+    .btn:active { transform: scale(.93); }
+
+    .btn svg {
+      width: calc(var(--btn-size) * .46);
+      height: calc(var(--btn-size) * .46);
+      grid-area: 1 / 1;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+
+    .btn.voice .icon-mic,
+    .btn.voice .icon-mic-off {
+      grid-area: 1 / 1;
+    }
+
+    .btn.voice .icon-mic-off { opacity: 0; transform: scale(.7); }
+    .btn.voice.muted .icon-mic { opacity: 0; transform: scale(.7); }
+    .btn.voice.muted .icon-mic-off { opacity: 1; transform: scale(1); }
+
+    .btn.voice.active {
+      background: linear-gradient(145deg, #1766a2, #102641);
+      border-color: #80c9ff;
+      box-shadow: 0 0 32px #269eff99;
+      animation: btnpulse 1.5s infinite;
+      color: #d6f5ff;
+    }
+
+    .btn.voice.muted {
+      background: linear-gradient(145deg, #4a2c14, #1a120b);
+      border-color: rgba(255, 183, 74, .55);
+      color: var(--amber);
+      box-shadow: 0 0 16px rgba(255, 183, 74, .28), inset 0 0 16px rgba(255, 183, 74, .1);
+      animation: none;
+    }
+
+    .btn.voice.muted:hover {
+      border-color: rgba(255, 183, 74, .9);
+      box-shadow: 0 0 24px rgba(255, 183, 74, .5);
+    }
+
+    @keyframes btnpulse {
+      50% { box-shadow: 0 0 42px #269effcc; }
+    }
+
+    .btn.voice::after {
+      content: "";
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 1px solid transparent;
+      pointer-events: none;
+      transition: border-color .3s ease;
+    }
+    .btn.voice.active::after {
+      border-color: rgba(66, 232, 255, .35);
+      animation: ringpulse 1.6s ease-out infinite;
+    }
+    .btn.voice.muted::after {
+      border-color: rgba(255, 183, 74, .35);
+    }
+
+    @keyframes ringpulse {
+      0%   { transform: scale(1);   opacity: .8; }
+      100% { transform: scale(1.35); opacity: 0; }
+    }
+
+    #floating-controls.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity .3s ease, visibility .3s ease;
+    }
+
+    /* ============================================================
+       CHAT PANEL
+       ============================================================ */
+    #chat-panel {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 0;
+      max-height: 0;
+      background: var(--panel-bg);
+      -webkit-backdrop-filter: blur(18px);
+      backdrop-filter: blur(18px);
+      border-top: 1px solid rgba(66, 232, 255, .35);
+      box-shadow: 0 -18px 40px rgba(0, 0, 0, .7), 0 0 0 1px rgba(66, 232, 255, .08) inset;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      transition: height .38s cubic-bezier(.22, 1, .36, 1), max-height .38s cubic-bezier(.22, 1, .36, 1);
+      pointer-events: none;
+      overflow: hidden;
+      border-radius: 20px 20px 0 0;
+      font-family: var(--font-serif);
+    }
+
+    #chat-panel.open {
+      height: min(58vh, 480px);
+      max-height: min(58vh, 480px);
+      pointer-events: auto;
+    }
+
+    #chat-head {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid rgba(66, 232, 255, .18);
+      letter-spacing: .25em;
+      font-size: clamp(8px, 2.2vw, 11px);
+      color: rgba(66, 232, 255, .75);
+      text-transform: uppercase;
+      gap: 8px;
+    }
+
+    #chat-head .title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    #chat-head .title .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--cy);
+      box-shadow: 0 0 10px var(--cy);
+      animation: breathe 1.6s ease-in-out infinite;
+      flex: 0 0 auto;
+    }
+
+    #chat-close {
+      background: transparent;
+      border: 1px solid rgba(66, 232, 255, .25);
+      color: rgba(66, 232, 255, .8);
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .2s, border-color .2s;
+      flex: 0 0 auto;
+      font-family: var(--font-serif);
+    }
+
+    #chat-close:hover,
+    #chat-close:active {
+      background: rgba(66, 232, 255, .12);
+      border-color: rgba(66, 232, 255, .7);
+    }
+
+    #chat-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px 14px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(66, 232, 255, .35) transparent;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #chat-body::-webkit-scrollbar { width: 4px; }
+    #chat-body::-webkit-scrollbar-track { background: transparent; }
+    #chat-body::-webkit-scrollbar-thumb {
+      background: rgba(66, 232, 255, .3);
+      border-radius: 99px;
+    }
+
+    .msg {
+      max-width: 88%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: clamp(10px, 2.6vw, 12px);
+      line-height: 1.5;
+      letter-spacing: .01em;
+      word-break: break-word;
+      animation: msgIn .28s ease both;
+      border: 1px solid transparent;
+      white-space: pre-wrap;
+    }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(6px) scale(.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .msg.jarvis {
+      align-self: flex-start;
+      background: rgba(66, 232, 255, .08);
+      border-color: rgba(66, 232, 255, .25);
+      color: #d4f6ff;
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 0 14px rgba(66, 232, 255, .06);
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: rgba(66, 232, 255, .18);
+      border-color: rgba(66, 232, 255, .5);
+      color: #eafdff;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 0 16px rgba(66, 232, 255, .12);
+    }
+
+    .msg .sender {
+      display: block;
+      font-size: .66em;
+      letter-spacing: .18em;
+      opacity: .6;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+
+    .msg.jarvis .sender { color: var(--cy); }
+    .msg.user   .sender { color: #8ef2ff; }
+
+    .typing {
+      align-self: flex-start;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 9px 14px;
+      background: rgba(66, 232, 255, .06);
+      border: 1px solid rgba(66, 232, 255, .18);
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+    }
+
+    .typing span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--cy);
+      opacity: .5;
+      animation: typingDot 1.2s infinite ease-in-out;
+    }
+    .typing span:nth-child(2) { animation-delay: .18s; }
+    .typing span:nth-child(3) { animation-delay: .36s; }
+
+    @keyframes typingDot {
+      0%, 60%, 100% { opacity: .25; transform: translateY(0); }
+      30% { opacity: 1; transform: translateY(-3px); }
+    }
+
+    #chat-foot {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px 12px;
+      border-top: 1px solid rgba(66, 232, 255, .14);
+      background: rgba(0, 0, 0, .18);
+    }
+
+    #chatInput {
+      flex: 1 1 auto;
+      min-width: 0;
+      background: rgba(66, 232, 255, .06);
+      border: 1px solid rgba(66, 232, 255, .28);
+      border-radius: 999px;
+      color: #eafdff;
+      padding: 9px 14px;
+      font-family: var(--font-serif);
+      font-size: clamp(10px, 2.6vw, 12px);
+      letter-spacing: .03em;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s, background .2s;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    #chatInput::placeholder {
+      color: rgba(66, 232, 255, .35);
+      letter-spacing: .08em;
+    }
+
+    #chatInput:focus {
+      border-color: rgba(66, 232, 255, .75);
+      box-shadow: 0 0 12px rgba(66, 232, 255, .18);
+      background: rgba(66, 232, 255, .09);
+    }
+
+    #chatSend {
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(66, 232, 255, .14);
+      border: 1px solid rgba(66, 232, 255, .55);
+      color: #cdf6ff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .2s, box-shadow .2s, transform .12s;
+      touch-action: manipulation;
+    }
+
+    #chatSend:hover,
+    #chatSend:active {
+      background: rgba(66, 232, 255, .28);
+      box-shadow: 0 0 18px rgba(66, 232, 255, .45);
+    }
+
+    #chatSend:active { transform: scale(.94); }
+
+    #chatSend svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #chat-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 2, 6, .55);
+      -webkit-backdrop-filter: blur(2px);
+      backdrop-filter: blur(2px);
+      z-index: 25;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .38s ease;
+    }
+
+    #chat-backdrop.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    @media (max-width: 640px) {
+      #chat-panel.open {
+        height: min(62vh, 500px);
+        max-height: min(62vh, 500px);
+      }
+      .msg { max-width: 94%; }
+      :root { --btn-size: 50px; }
+    }
+
+    @media (max-height: 640px) and (orientation: portrait) {
+      :root { --btn-size: 46px; }
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) {
+      #chat-panel.open {
+        height: 76vh;
+        max-height: 76vh;
+      }
+      #chat-head { padding: 6px 12px 5px; }
+      #chat-body { padding: 8px 12px 4px; gap: 6px; }
+      .msg { font-size: clamp(9px, 2vh, 12px); padding: 6px 10px; }
+      #chat-foot { padding: 6px 10px 8px; }
+      #chatInput { padding: 7px 12px; }
+      #chatSend { width: 34px; height: 34px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="bg-fallback"></div>
+<div id="bg"></div>
+<div id="grid"></div>
+<div id="vignette"></div>
+<div id="flicker"></div>
+<div id="scanlines"></div>
+
+<div id="stage">
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <div id="hud">
+    <div id="sys">
+      ARC REACTOR <span>STABLE</span><br>
+      UPLINK <span id="ping">14 ms</span><br>
+      LOAD <span id="load">08%</span>
+    </div>
+    <div id="clock">
+      <div class="big" id="time">--:--:--</div>
+      <div id="date">—</div>
+      <div id="tz">DHAKA · BST</div>
+    </div>
+  </div>
+
+  <div id="core-wrap">
+    <div id="core">
+      <img id="core-logo" src="https://i.ibb.co.com/jkznH759/81b81b38c72e148ce4ddfcae172733f0.jpg" alt="J.A.R.V.I.S. core"
+        onerror="this.style.display='none';this.parentNode.classList.add('no-logo')">
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="wave"><canvas id="waveCanvas"></canvas></div>
+    <div id="status">
+      <div id="statusText"></div>
+      <div id="listening"><span class="dot"></span>STANDING BY &nbsp;·&nbsp; SAY <b>"JARVIS"</b></div>
+    </div>
+  </div>
+</div>
+
+<div id="floating-controls">
+  <button class="btn voice" id="voice" aria-label="Toggle microphone" aria-pressed="false">
+    <svg class="icon-mic" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.7"
+      stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="13" rx="3"/>
+      <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>
+    </svg>
+    <svg class="icon-mic-off" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.7"
+      stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 9v3a3 3 0 0 0 4.5 2.6M15 9.3V5a3 3 0 0 0-5.9-.7"/>
+      <path d="M5 10v2a7 7 0 0 0 10.6 6.06M19 10v2a7 7 0 0 1-.3 2"/>
+      <path d="M12 19v3m-4 0h8"/>
+      <line x1="3" y1="3" x2="21" y2="21"/>
+    </svg>
+  </button>
+
+  <button class="btn chat" id="chat" aria-label="Toggle chat">
+    <svg viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.7"
+      stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5Z"/>
+    </svg>
+  </button>
+</div>
+
+<div id="toast"></div>
+
+<div id="chat-backdrop"></div>
+
+<div id="chat-panel" role="dialog" aria-label="J.A.R.V.I.S. chat" aria-hidden="true">
+  <div id="chat-head">
+    <div class="title">
+      <span class="pulse-dot"></span>
+      <span>J.A.R.V.I.S. · comms</span>
+    </div>
+    <button id="chat-close" aria-label="Close chat" title="Close">✕</button>
+  </div>
+  <div id="chat-body"></div>
+  <div id="chat-foot">
+    <input id="chatInput" type="text" placeholder="TYPE A MESSAGE…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" />
+    <button id="chatSend" aria-label="Send message" title="Send">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<div id="boot"><div id="bootLog"></div></div>
+
+<script>
+  (function () {
+    'use strict';
+
+    const core       = document.getElementById('core');
+    const coreLogo   = document.getElementById('core-logo');
+    const coreWrap   = document.getElementById('core-wrap');
+    const waveWrap   = document.getElementById('wave');
+    const wc         = document.getElementById('waveCanvas');
+    const wctx       = wc.getContext('2d');
+    const toastEl    = document.getElementById('toast');
+    const statusEl   = document.getElementById('statusText');
+    const listenEl   = document.getElementById('listening');
+
+    const voiceBtn   = document.getElementById('voice');
+    const chatBtn    = document.getElementById('chat');
+    const floatCtrls = document.getElementById('floating-controls');
+
+    const chatPanel  = document.getElementById('chat-panel');
+    const chatBackdrop = document.getElementById('chat-backdrop');
+    const chatBody   = document.getElementById('chat-body');
+    const chatInput  = document.getElementById('chatInput');
+    const chatSend   = document.getElementById('chatSend');
+    const chatClose  = document.getElementById('chat-close');
+
+    const root = document.documentElement;
+
+    /* ---------- sizing ---------- */
+    function sizeCore() {
+      const r = coreWrap.getBoundingClientRect();
+      const avail = Math.min(r.width, r.height);
+      const size = Math.max(100, Math.min(avail * 0.70, 220) - 8);
+      core.style.width  = size + 'px';
+      core.style.height = size + 'px';
+    }
+
+    function sizeWave() {
+      const wr = waveWrap.getBoundingClientRect();
+      const wDpr = Math.min(2, window.devicePixelRatio || 1);
+      const ww = Math.max(1, Math.round(wr.width  * wDpr));
+      const wh = Math.max(1, Math.round(wr.height * wDpr));
+      if (wc.width !== ww || wc.height !== wh) {
+        wc.width  = ww;
+        wc.height = wh;
+      }
+    }
+
+    function layout() {
+      sizeCore();
+      sizeWave();
+    }
+
+    window.addEventListener('resize', layout);
+    window.addEventListener('orientationchange', () => setTimeout(layout, 180));
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', layout);
+    }
+
+    /* ---------- clock (Dhaka, 12h) ---------- */
+    const DHAKA_TZ = 'Asia/Dhaka';
+
+    function dhakaTime12() {
+      return new Date().toLocaleTimeString('en-US', {
+        timeZone: DHAKA_TZ,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
+
+    function clock() {
+      const d = new Date();
+      document.getElementById('time').textContent = dhakaTime12();
+      document.getElementById('date').textContent =
+        d.toLocaleDateString('en-GB', {
+          timeZone: DHAKA_TZ,
+          weekday: 'short',
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }).toUpperCase();
+    }
+    setInterval(clock, 1000);
+    clock();
+
+    setInterval(() => {
+      document.getElementById('ping').textContent =
+        (10 + Math.floor(Math.random() * 12)) + ' ms';
+      document.getElementById('load').textContent =
+        String(4 + Math.floor(Math.random() * 18)).padStart(2, '0') + '%';
+    }, 2200);
+
+    /* ---------- audio / mic ---------- */
+    let analyser = null;
+    let freq = null;
+    let live = false;
+    let audioCtx = null;
+    let micStream = null;
+
+    async function startMic() {
+      if (live) return true;
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('MIC REQUIRES HTTPS · SIMULATION MODE');
+        setListening(false, true);
+        return false;
+      }
+
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        const src = audioCtx.createMediaStreamSource(micStream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = .82;
+        src.connect(analyser);
+        freq = new Uint8Array(analyser.frequencyBinCount);
+        live = true;
+        setListening(true);
+        return true;
+      } catch (err) {
+        showToast('MIC UNAVAILABLE · SIMULATION MODE');
+        setListening(false, true);
+        return false;
+      }
+    }
+
+    function stopMic() {
+      live = false;
+      analyser = null;
+      freq = null;
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      setListening(false, false);
+    }
+
+    /* ---------- audio energy model ---------- */
+    let simPhase = 0;
+    let aiSpeechEnergy = 0;
+    let coreEnergy = 0;
+    let speaking = false;
+
+    const WB = 64;
+
+    function getMicLevels(n) {
+      const out = new Float32Array(n);
+      if (!live || !analyser) return out;
+      analyser.getByteFrequencyData(freq);
+      const step = Math.max(1, Math.floor(freq.length * 0.55 / n));
+      for (let i = 0; i < n; i++) {
+        let s = 0;
+        const base = i * step;
+        for (let j = 0; j < step; j++) s += freq[base + j];
+        out[i] = (s / step) / 255;
+      }
+      return out;
+    }
+
+    function getAISpeechLevels(n) {
+      const out = new Float32Array(n);
+      if (aiSpeechEnergy < 0.01) return out;
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        const bell = Math.sin(Math.PI * t);
+        const wave =
+          Math.sin(simPhase * 3.1 + t * 11) * 0.50 +
+          Math.sin(simPhase * 1.7 + t * 23) * 0.30 +
+          Math.sin(simPhase * 4.3 + t * 7)  * 0.20;
+        out[i] = Math.max(0, bell * aiSpeechEnergy * (0.65 + 0.35 * wave));
+      }
+      return out;
+    }
+
+    function levels(n) {
+      const mic = getMicLevels(n);
+      const ai  = getAISpeechLevels(n);
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        const idle = 0.025 + 0.015 * Math.sin(simPhase * 1.5 + t * 4);
+        out[i] = Math.min(1, idle + mic[i] * 0.85 + ai[i]);
+      }
+      return out;
+    }
+
+    function drawWave(L) {
+      const W = wc.width, H = wc.height, mid = H / 2;
+      wctx.clearRect(0, 0, W, H);
+      const bw = W / WB;
+
+      for (let i = 0; i < WB; i++) {
+        const edge = Math.sin(Math.PI * (i / WB));
+        const h = Math.max(3, L[i] * H * 0.92 * edge);
+        const x = i * bw + bw * 0.24;
+        const w = bw * 0.52;
+        const g = wctx.createLinearGradient(0, mid - h / 2, 0, mid + h / 2);
+        g.addColorStop(0,   'rgba(66,232,255,0.15)');
+        g.addColorStop(0.5, 'rgba(180,250,255,0.95)');
+        g.addColorStop(1,   'rgba(66,232,255,0.15)');
+        wctx.fillStyle = g;
+        wctx.fillRect(x, mid - h / 2, w, h);
+      }
+
+      wctx.strokeStyle = 'rgba(66,232,255,.22)';
+      wctx.lineWidth = 1;
+      wctx.beginPath();
+      wctx.moveTo(0, mid);
+      wctx.lineTo(W, mid);
+      wctx.stroke();
+    }
+
+    let running = true;
+    let lastFrame = 0;
+    const FRAME_MS = 1000 / 60;
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (!running) return;
+      if (now - lastFrame < FRAME_MS - 2) return;
+      lastFrame = now;
+
+      simPhase += 0.045;
+
+      if (speaking) {
+        aiSpeechEnergy = 0.6 + 0.35 * Math.sin(simPhase * 2.3);
+      } else {
+        aiSpeechEnergy *= 0.92;
+        if (aiSpeechEnergy < 0.01) aiSpeechEnergy = 0;
+      }
+
+      const L = levels(WB);
+      drawWave(L);
+
+      let sum = 0;
+      for (let i = 0; i < L.length; i++) sum += L[i];
+      const frameEnergy = sum / L.length;
+
+      coreEnergy += (frameEnergy - coreEnergy) * 0.2;
+
+      root.style.setProperty('--audio-energy', coreEnergy.toFixed(3));
+
+      const breath = Math.sin(now / 1800) * 0.012;
+      const totalScale = 1 + breath + coreEnergy * 0.20;
+
+      const glowBlur  = 18 + coreEnergy * 50;
+      const glowAlpha = 0.50 + coreEnergy * 0.45;
+      const ringAlpha = 0.55 + coreEnergy * 0.35;
+      const spread2x  = glowBlur * 2.4;
+
+      coreLogo.style.transform = 'scale(' + totalScale.toFixed(4) + ')';
+      coreLogo.style.boxShadow =
+        '0 0 0 2px rgba(66,232,255,' + ringAlpha.toFixed(3) + '), ' +
+        '0 0 ' + glowBlur.toFixed(1) + 'px rgba(66,232,255,' + glowAlpha.toFixed(3) + '), ' +
+        '0 0 ' + spread2x.toFixed(1) + 'px rgba(66,232,255,' + (glowAlpha * 0.5).toFixed(3) + '), ' +
+        'inset 0 0 40px rgba(0,0,0,.35)';
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      running = !document.hidden;
+      if (running) lastFrame = 0;
+    });
+
+    function setListening(on, simMode) {
+      if (on) {
+        listenEl.innerHTML = '<span class="dot"></span>LISTENING';
+      } else if (simMode) {
+        listenEl.innerHTML = '<span class="dot"></span>SIMULATION MODE';
+      } else {
+        listenEl.innerHTML = '<span class="dot"></span>STANDING BY &nbsp;·&nbsp; SAY <b>"JARVIS"</b>';
+      }
+    }
+
+    const lines = [
+      'Good evening. All systems are online.',
+      'How may I assist you, sir?',
+      'Perimeter secure. No anomalies detected.',
+      'Running diagnostics on the arc reactor.',
+      'Reactor output nominal at 4.1 gigajoules.',
+      'Shall I prepare the workshop?',
+      'Awaiting your instruction.'
+    ];
+    let li = 0;
+
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+
+    async function type(text) {
+      speaking = true;
+      statusEl.innerHTML = '';
+      const span = document.createElement('span');
+      statusEl.appendChild(span);
+      const caret = document.createElement('span');
+      caret.id = 'caret';
+      statusEl.appendChild(caret);
+
+      for (let i = 0; i < text.length; i++) {
+        span.textContent += text[i];
+        aiSpeechEnergy = Math.max(aiSpeechEnergy, 0.7 + Math.random() * 0.25);
+        await wait(26 + Math.random() * 42);
+      }
+
+      speaking = false;
+      await wait(2600);
+    }
+
+    async function talkLoop() {
+      while (true) {
+        await type(lines[li % lines.length]);
+        li++;
+      }
+    }
+
+    /* ---------- toast ---------- */
+    let toastTimer = null;
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+    }
+
+    /* ---------- wake lock ---------- */
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (e) { /* ignored */ }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (wakeLock !== null && document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    });
+
+    /* ---------- chat ---------- */
+    let chatOpen = false;
+
+    function openChat() {
+      if (chatOpen) return;
+      chatOpen = true;
+      chatPanel.classList.add('open');
+      chatBackdrop.classList.add('show');
+      chatPanel.setAttribute('aria-hidden', 'false');
+      floatCtrls.classList.add('hidden');
+      seedChat();
+      setTimeout(() => chatInput.focus(), 380);
+    }
+
+    function closeChat() {
+      if (!chatOpen) return;
+      chatOpen = false;
+      chatPanel.classList.remove('open');
+      chatBackdrop.classList.remove('show');
+      chatPanel.setAttribute('aria-hidden', 'true');
+      chatInput.blur();
+      floatCtrls.classList.remove('hidden');
+    }
+
+    chatClose.addEventListener('click', closeChat);
+    chatBackdrop.addEventListener('click', closeChat);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && chatOpen) closeChat();
+    });
+
+    function sendMessage() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      chatInput.value = '';
+      appendMessage('user', text);
+      showTyping();
+
+      // Native bridge (Flutter WebView / Android overlay): the real AI core
+      // answers asynchronously via window.onJarvisReply().
+      if (window.JARVIS_NATIVE) {
+        if (typeof window.JARVIS_NATIVE.ask === 'function') {
+          window.JARVIS_NATIVE.ask(text);
+        } else {
+          // Flutter webview_flutter channel: postMessage-only surface.
+          window.JARVIS_NATIVE.postMessage(text);
+        }
+        return;
+      }
+
+      // Browser preview fallback: local canned replies.
+      setTimeout(() => {
+        removeTyping();
+        const reply = generateReply(text);
+        appendMessage('jarvis', reply);
+      }, 600 + Math.random() * 700);
+    }
+
+    function appendMessage(who, text) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + who;
+      const sender = document.createElement('span');
+      sender.className = 'sender';
+      sender.textContent = who === 'jarvis' ? 'J.A.R.V.I.S.' : 'You';
+      div.appendChild(sender);
+      div.appendChild(document.createTextNode(text));
+      chatBody.appendChild(div);
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+
+    let typingEl = null;
+    function showTyping() {
+      if (typingEl) return;
+      typingEl = document.createElement('div');
+      typingEl.className = 'typing';
+      typingEl.innerHTML = '<span></span><span></span><span></span>';
+      chatBody.appendChild(typingEl);
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+
+    function removeTyping() {
+      if (typingEl && typingEl.parentNode) {
+        typingEl.parentNode.removeChild(typingEl);
+      }
+      typingEl = null;
+    }
+
+    // Native bridge reply hook — called by the host (Flutter/Android) when
+    // the real AI core has produced an answer for the last user message.
+    window.onJarvisReply = function (text) {
+      removeTyping();
+      appendMessage('jarvis', String(text == null ? '' : text));
+    };
+    window.onJarvisError = function (message) {
+      removeTyping();
+      appendMessage('jarvis', 'Bridge error: ' + String(message || 'unknown'));
+    };
+
+    function generateReply(input) {
+      const lower = input.toLowerCase();
+
+      if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
+        return 'Good day, sir. How may I be of service?';
+      }
+      if (lower.includes('status') || lower.includes('system')) {
+        return 'All systems nominal. Arc reactor output steady at 4.1 gigajoules. No anomalies detected.';
+      }
+      if (lower.includes('time') || lower.includes('clock')) {
+        return 'The current time in Dhaka is ' + dhakaTime12() + ' (Bangladesh Standard Time).';
+      }
+      if (lower.includes('date') || lower.includes('today')) {
+        const dstr = new Date().toLocaleDateString('en-GB', {
+          timeZone: DHAKA_TZ,
+          weekday: 'long',
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric'
+        });
+        return 'Today in Dhaka is ' + dstr + '.';
+      }
+      if (lower.includes('weather')) {
+        return 'I’m afraid I don’t have access to weather data in this simulation, sir.';
+      }
+      if (lower.includes('help') || lower.includes('what can you do')) {
+        return 'I can monitor systems, provide status reports, tell you the time and date in Dhaka, and engage in conversation. Try asking about the reactor, time, or simply say hello.';
+      }
+      if (lower.includes('thank')) {
+        return 'Always a pleasure, sir.';
+      }
+      if (lower.includes('jarvis')) {
+        return 'At your service.';
+      }
+
+      const defaults = [
+        'Interesting. I’ll note that in the log.',
+        'Shall I run a diagnostic on that?',
+        'I’m not sure I follow, sir, but I’m listening.',
+        'Processing… please elaborate.',
+        'Understood. Anything else?'
+      ];
+      return defaults[Math.floor(Math.random() * defaults.length)];
+    }
+
+    chatSend.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    function seedChat() {
+      if (chatBody.children.length === 0) {
+        appendMessage('jarvis', 'Good evening, sir. Chat interface online. How may I assist?');
+      }
+    }
+
+    /* ---------- voice button ---------- */
+    let micMuted = true;
+
+    function renderVoiceState() {
+      if (micMuted) {
+        voiceBtn.classList.remove('active');
+        voiceBtn.classList.add('muted');
+        voiceBtn.setAttribute('aria-pressed', 'false');
+        voiceBtn.setAttribute('aria-label', 'Unmute microphone');
+      } else {
+        voiceBtn.classList.remove('muted');
+        voiceBtn.classList.add('active');
+        voiceBtn.setAttribute('aria-pressed', 'true');
+        voiceBtn.setAttribute('aria-label', 'Mute microphone');
+      }
+    }
+
+    async function toggleVoice() {
+      if (micMuted) {
+        const ok = await startMic();
+        micMuted = false;
+        renderVoiceState();
+        if (ok) showToast('MICROPHONE ACTIVE');
+        else showToast('SIMULATION MODE · MIC OFF');
+      } else {
+        stopMic();
+        micMuted = true;
+        renderVoiceState();
+        showToast('MICROPHONE MUTED');
+      }
+    }
+
+    voiceBtn.addEventListener('click', toggleVoice);
+    renderVoiceState();
+
+    chatBtn.addEventListener('click', () => {
+      if (chatOpen) closeChat();
+      else openChat();
+    });
+
+    /* ---------- boot ---------- */
+    const bootSteps = [
+      'INITIALIZING KERNEL',
+      'MOUNTING NEURAL CORE',
+      'ARC REACTOR ...... ONLINE',
+      'VOICE ENGINE ..... CALIBRATED',
+      'HOLOGRAPHIC MATRIX SYNCED',
+      'SECURITY LATTICE . ARMED',
+      'SYNCING CLOCK TO ASIA/DHAKA',
+      'J.A.R.V.I.S. READY'
+    ];
+
+    (async function boot() {
+      const log = document.getElementById('bootLog');
+      for (let i = 0; i < bootSteps.length; i++) {
+        const d = document.createElement('div');
+        d.innerHTML = '<span style="opacity:.5">&gt;</span> ' + bootSteps[i] + ' <span class="ok">✓</span>';
+        log.appendChild(d);
+        await wait(340);
+      }
+      await wait(480);
+      document.getElementById('boot').classList.add('done');
+      talkLoop();
+    })();
+
+    /* ---------- init ---------- */
+    layout();
+    setTimeout(layout, 120);
+    setTimeout(layout, 600);
+
+    requestAnimationFrame(loop);
+
+    chatPanel.classList.remove('open');
+    chatBackdrop.classList.remove('show');
+    chatPanel.setAttribute('aria-hidden', 'true');
+
+  })();
+</script>
+</body>
+</html>

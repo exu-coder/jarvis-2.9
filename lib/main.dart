@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 import 'app.dart';
 import 'overlay/overlay_app.dart';
+import 'services/ai_service.dart';
 import 'services/calendar_reminder_service.dart';
 import 'services/hermes_evolution_service.dart';
 import 'services/jarvis_service.dart';
@@ -37,8 +39,26 @@ Future<void> main() async {
 
   _wireTelegram(executor, settings);
   _wireOverlayCommands(executor);
+  _wireBubbleChannel();
 
   runApp(const PrivateAgentApp());
+}
+
+/// Native floating-bubble channel: BubbleOverlayService asks the AI core
+/// through `com.jarvis.dev/bubble` and expects the answer text back.
+void _wireBubbleChannel() {
+  MethodChannel('com.jarvis.dev/bubble').setMethodCallHandler((call) async {
+    if (call.method == 'ask') {
+      final text = (call.arguments as String?)?.trim() ?? '';
+      if (text.isEmpty) return null;
+      try {
+        return await AiService.instance.chat(message: text);
+      } catch (_) {
+        return 'My apologies, sir — I could not reach the uplink.';
+      }
+    }
+    return null;
+  });
 }
 
 /// Telegram bot -> task executor wiring.

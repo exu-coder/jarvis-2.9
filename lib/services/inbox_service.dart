@@ -88,7 +88,7 @@ class InboxService {
   static final InboxService instance = InboxService._();
 
   static const MethodChannel _channel =
-      MethodChannel('com.privateagent/accessibility');
+      MethodChannel('com.jarvis.dev/accessibility');
 
   /// Fetches the recent SMS inbox messages.
   Future<List<SmsMessage>> getSmsInbox({int limit = 15}) async {

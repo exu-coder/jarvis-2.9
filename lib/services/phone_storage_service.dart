@@ -7,7 +7,7 @@ class PhoneStorageService {
   PhoneStorageService._();
   static final PhoneStorageService instance = PhoneStorageService._();
 
-  static const MethodChannel _channel = MethodChannel('com.privateagent/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   Future<Map<String, dynamic>> createFile({
     required String fileName,

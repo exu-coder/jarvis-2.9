@@ -40,7 +40,7 @@ class VisionPerceptionService extends ChangeNotifier {
   VisionPerceptionService._();
   static final VisionPerceptionService instance = VisionPerceptionService._();
 
-  static const _channel = MethodChannel('com.privateagent/accessibility');
+  static const _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   VisionAnalysisResult? _lastResult;
   VisionAnalysisResult? get lastResult => _lastResult;

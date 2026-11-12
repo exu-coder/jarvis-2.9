@@ -17,7 +17,7 @@ class SentryService extends ChangeNotifier {
   SentryService._();
   static final SentryService instance = SentryService._();
 
-  static const MethodChannel _channel = MethodChannel('com.privateagent/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   bool _isArmed = false;
   bool get isArmed => _isArmed;

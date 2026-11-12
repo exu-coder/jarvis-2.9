@@ -55,7 +55,7 @@ class NetworkAuditService extends ChangeNotifier {
   NetworkAuditService._();
   static final NetworkAuditService instance = NetworkAuditService._();
 
-  static const MethodChannel _channel = MethodChannel('com.privateagent/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   bool _isAuditing = false;
   NetworkAuditReport? _lastReport;

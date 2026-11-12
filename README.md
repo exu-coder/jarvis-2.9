@@ -3,14 +3,14 @@
 # ⚡ J.A.R.V.I.S. (PrivateAgent)
 
 ### **Autonomous, Self-Evolving On-Device AI Assistant & Android UI Automation Agent**
-*Architected and Engineered with Precision by **Abuzar***
+*Architected and Engineered with Precision*
 
 ---
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.12+-0175C2?style=for-the-badge&logo=dart&logoColor=white)](https://dart.dev)
 [![Android](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--15)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
-[![Release](https://img.shields.io/badge/Release-v1.1.0-blue?style=for-the-badge&logo=github)](https://github.com/AbuZar-Ansarii/Jarvis/releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-blue?style=for-the-badge&logo=github)](https://github.com/exu-coder/jarvis-2.9/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local--First-00E5FF?style=for-the-badge&logo=shield&logoColor=black)](https://ollama.com)
 [![Hermes](https://img.shields.io/badge/Hermes-Self--Evolving%20Engine-BA68C8?style=for-the-badge&logo=openai&logoColor=white)](https://nousresearch.com)
@@ -27,7 +27,7 @@
 
 ## 🌟 System Overview
 
-**J.A.R.V.I.S.** (PrivateAgent) is an autonomous, on-device AI assistant, system automation framework, and cybernetic operating HUD for Android, architected and built by **Abuzar**. 
+**J.A.R.V.I.S.** (PrivateAgent) is an autonomous, on-device AI assistant, system automation framework, and cybernetic operating HUD for Android, architected and engineered for Android. 
 
 Unlike conventional voice assistants that merely return web searches or canned voice responses, J.A.R.V.I.S. acts as a true autonomous operator on your smartphone. By coupling on-device accessibility inspection, native sensor hardware access, multimodal machine vision, and OpenAI-compatible LLM backends (cloud or 100% offline via Ollama), J.A.R.V.I.S. can:
 
@@ -82,7 +82,7 @@ flowchart TD
     end
 
     subgraph PlatformBridge ["Native Android Bridge (Kotlin Platform Channels)"]
-        MainActivity["MainActivity (MethodChannels)\ncom.privateagent/accessibility\ncom.privateagent/speech"]
+        MainActivity["MainActivity (MethodChannels)\ncom.jarvis.dev/accessibility\ncom.jarvis.dev/speech"]
         AccessibilitySvc["AgentAccessibilityService\n(Screen Dump, Gestures, Macro Recorder)"]
         NotificationSvc["InboxNotificationListenerService\n(SMS & Email Triage)"]
         SensorHardware["Sensor Subsystem\n(Proximity Sensor, Accelerometer, Battery Broadcasts)"]
@@ -230,7 +230,7 @@ Cinema-grade simulated kernel panic designed to stop phone snoopers and prying f
 - **Intruder Tamper Alarm**: Any touch attempt on the screen triggers aggressive haptic vibrations and increments an escalating warning counter:
   > *"TAMPER VIOLATIONS: [N] — TRANSMITTING INTRUDER BIOMETRICS TO DEFENSE COMMAND"*
 - **Disarm Methods**:
-  - **Voice Passphrase**: Say *"override alpha"*, *"stand down jarvis"*, *"abuzar protocol"*, or *"disarm"* (speech recognizer runs in background).
+  - **Voice Passphrase**: Say *"override alpha"*, *"stand down jarvis"*, or *"disarm"* (speech recognizer runs in background).
   - **Hidden Gesture**: 4 rapid taps in the top-right corner.
   - **Emergency Override**: Double-tap or long-press the emergency override slider bar.
 
@@ -477,7 +477,7 @@ Jarvis/
 ├── android/                                    # Native Android host layer
 │   └── app/src/main/
 │       ├── AndroidManifest.xml                 # Services, receivers & permission manifest
-│       └── kotlin/com/privateagent/private_agent/
+│       └── kotlin/com/jarvis/dev/
 │           ├── MainActivity.kt                 # Platform channels, sensor dispatch, camera
 │           ├── AgentAccessibilityService.kt    # Screen hierarchy dump & UI touch injection
 │           └── InboxNotificationListenerService.kt # Email & SMS listener
@@ -534,6 +534,6 @@ Jarvis/
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
-Architected, designed, and engineered by **Abuzar**. All rights reserved.
+All rights reserved.
 
 *Built for privacy enthusiasts, power users, and anyone who ever dreamed of carrying a genuine, autonomous J.A.R.V.I.S. in their pocket.*

@@ -24,6 +24,7 @@ import 'charging_telemetry_service.dart';
 import 'code_black_service.dart';
 import 'commute_traffic_service.dart';
 import 'conversational_memory_service.dart';
+import 'device_control_service.dart';
 import 'email_triage_service.dart';
 import 'finance_tracking_service.dart';
 import 'floating_copilot_service.dart';
@@ -1199,7 +1200,7 @@ class JarvisService extends ChangeNotifier {
       return;
     }
 
-    // 3e-2b. Creator & Builder Identity (Built by Abuzar)
+    // 3e-2b. Creator & Builder Identity (built by the Jarvis project team)
     if (lower.contains('who built you') ||
         lower.contains('who created you') ||
         lower.contains('who made you') ||
@@ -1219,7 +1220,7 @@ class JarvisService extends ChangeNotifier {
       final reply = PersonalityService.instance.getCreatorAnswer();
       _lastJarvisSpeech = reply;
       _phase = JarvisPhase.speaking;
-      _statusMessage = 'CREATOR // ABUZAR';
+      _statusMessage = 'CREATOR // JARVIS CORE';
       notifyListeners();
       await _voice.speak(reply);
       await _startFollowUpListening();
@@ -2836,6 +2837,48 @@ Mastering the boundless road.
         _lastJarvisSpeech = planSpoken;
         notifyListeners();
         await _voice.speak(planSpoken);
+        break;
+
+      case JarvisIntentType.deviceControl:
+        _phase = JarvisPhase.thinking;
+        _statusMessage = 'DIRECT DEVICE CONTROL';
+        notifyListeners();
+        final deviceResult = await DeviceControlService.instance
+            .executeCommand(intent.toolArg?.isNotEmpty == true ? intent.toolArg! : trimmed);
+        String spoken;
+        if (deviceResult.success) {
+          spoken = deviceResult.spoken;
+          _lastJarvisSpeech = spoken;
+          _phase = JarvisPhase.speaking;
+          _statusMessage = 'DEVICE CONTROL EXECUTED';
+          notifyListeners();
+        } else if (deviceResult.spoken.isEmpty) {
+          // Not a device command after all: delegate to the UI automation agent.
+          final goal = trimmed;
+          _currentTaskGoal = goal;
+          _phase = JarvisPhase.executing;
+          _statusMessage = 'AGENT EXECUTION // $goal'.toUpperCase();
+          notifyListeners();
+          final status = await _executor.executeTask(goal);
+          spoken = switch (status) {
+            TaskStatus.success =>
+              'I have completed that task for you, sir. Is there anything else you need?',
+            TaskStatus.cancelled => 'The task was cancelled, sir.',
+            _ => 'I encountered an obstruction with that task, sir.',
+          };
+          _lastJarvisSpeech = spoken;
+          _phase = JarvisPhase.speaking;
+          notifyListeners();
+        } else {
+          spoken = deviceResult.spoken;
+          _lastJarvisSpeech = spoken;
+          _phase = JarvisPhase.speaking;
+          _statusMessage = 'DEVICE CONTROL BLOCKED // PERMISSION';
+          notifyListeners();
+          await SecurityAlertService.instance
+              .dispatchSecurityAlert('Device control blocked: ${deviceResult.spoken}');
+        }
+        await _voice.speak(spoken);
         break;
 
       case JarvisIntentType.system:

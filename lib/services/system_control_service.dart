@@ -257,7 +257,7 @@ class SystemControlService {
 
   Future<bool> takeScreenshot() async {
     try {
-      final res = await const MethodChannel('com.privateagent/accessibility')
+      final res = await const MethodChannel('com.jarvis.dev/accessibility')
           .invokeMethod<bool>('takeScreenshot');
       return res ?? false;
     } catch (_) {

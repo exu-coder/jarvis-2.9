@@ -1,4 +1,4 @@
-package com.privateagent.private_agent
+package com.jarvis.dev
 
 import android.app.ActivityManager
 import android.app.AppOpsManager
@@ -6,6 +6,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -14,6 +15,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -39,15 +41,57 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Bridges Flutter -> [AgentAccessibilityService] via `com.privateagent/accessibility`
- * and continuous hands-free voice via `com.privateagent/speech`.
+ * Bridges Flutter -> [AgentAccessibilityService] via `com.jarvis.dev/accessibility`
+ * and continuous hands-free voice via `com.jarvis.dev/speech`.
  */
 class MainActivity : FlutterActivity() {
 
-    private val channelName = "com.privateagent/accessibility"
-    private val speechChannelName = "com.privateagent/speech"
+    companion object {
+        /// Dart-side channel used by BubbleOverlayService to reach the AI core.
+        const val BUBBLE_CHANNEL_NAME = "com.jarvis.dev/bubble"
+
+        @Volatile
+        var bubbleChannel: MethodChannel? = null
+
+        /**
+         * Asks the Dart AI core (via the cached main engine's channel) and
+         * returns the reply asynchronously; `null` means "core unreachable".
+         * Must be called on the main thread.
+         */
+        fun dispatchBubbleAsk(text: String, reply: (String?) -> Unit) {
+            val channel = bubbleChannel
+            if (channel == null) {
+                reply(null)
+                return
+            }
+            channel.invokeMethod(
+                "ask",
+                text,
+                object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        reply(result as? String)
+                    }
+
+                    override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+                        reply(null)
+                    }
+
+                    override fun notImplemented() {
+                        reply(null)
+                    }
+                }
+            )
+        }
+    }
+
+    private val channelName = "com.jarvis.dev/accessibility"
+    private val speechChannelName = "com.jarvis.dev/speech"
+    private val deviceChannelName = "com.jarvis.dev/device"
     private var accessibilityChannel: MethodChannel? = null
     private var speechChannel: MethodChannel? = null
+    private var deviceChannel: MethodChannel? = null
+    private val screenCaptureRequestCode = 9201
+    private val permissionsRequestCode = 9202
     private var speechRecognizer: SpeechRecognizer? = null
     private var recognitionIntent: Intent? = null
     private var isContinuousListening = false
@@ -93,6 +137,20 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == screenCaptureRequestCode) {
+            val ready = resultCode == RESULT_OK && data != null
+            if (ready && data != null) {
+                try {
+                    ScreenCaptureService.start(this, resultCode, data)
+                } catch (e: Exception) {
+                    android.util.Log.e("JARVIS_DEVICE", "Screen capture start failed: $e")
+                }
+            }
+            deviceChannel?.invokeMethod(
+                "onScreenCaptureReady",
+                mapOf("granted" to ready, "resultCode" to resultCode)
+            )
+        }
         if (requestCode == cameraRequestCode) {
             val result = pendingCameraResult
             pendingCameraResult = null
@@ -673,8 +731,239 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Device control & permissions bridge: `com.jarvis.dev/device`.
+     *
+     * Exposes the full capability surface declared in the manifest:
+     * foreground services (agent / location / screen capture / connected
+     * devices), runtime permission reporting + batch requests, settings
+     * navigation, SMS, calls, contact + calendar reads, alarms, volume,
+     * brightness, torch, screen lock, and storage / media snapshots.
+     */
+    private fun setupDeviceChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceChannelName)
+        deviceChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "getPermissionReport" ->
+                        result.success(DeviceControlManager.permissionReport(this))
+
+                    "requestPermissions" -> {
+                        val groups = call.argument<List<String>>("groups") ?: emptyList()
+                        val perms = DeviceControlManager.permissionsFor(groups)
+                        if (perms.isEmpty()) {
+                            result.success(mapOf("granted" to true, "message" to "Nothing to request."))
+                        } else {
+                            requestPermissions(perms.toTypedArray(), permissionsRequestCode)
+                            result.success(mapOf("requested" to perms.size))
+                        }
+                    }
+
+                    "openSettingsPage" -> {
+                        val page = call.argument<String>("page") ?: ""
+                        result.success(DeviceControlManager.openSettingsPage(this, page))
+                    }
+
+                    "openPanel" -> {
+                        val panel = call.argument<String>("panel") ?: "wireless"
+                        result.success(DeviceControlManager.openPanel(this, panel))
+                    }
+
+                    "getServiceStatus" ->
+                        result.success(DeviceControlManager.serviceStatus(this))
+
+                    "startService" -> {
+                        val service = call.argument<String>("service") ?: ""
+                        result.success(DeviceControlManager.startService(this, service))
+                    }
+
+                    "stopService" -> {
+                        val service = call.argument<String>("service") ?: ""
+                        result.success(DeviceControlManager.stopService(this, service))
+                    }
+
+                    "startBubble" -> {
+                        if (Settings.canDrawOverlays(this)) {
+                            BubbleOverlayService.start(this)
+                            result.success(
+                                mapOf("success" to true, "message" to "Bubble overlay started.")
+                            )
+                        } else {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "message" to "Overlay permission required — grant it, then try again."
+                                )
+                            )
+                        }
+                    }
+
+                    "stopBubble" -> {
+                        BubbleOverlayService.stop(this)
+                        result.success(
+                            mapOf("success" to true, "message" to "Bubble overlay stopped.")
+                        )
+                    }
+
+                    "isBubbleRunning" ->
+                        result.success(mapOf("running" to BubbleOverlayService.isRunning))
+
+                    "setAutostart" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        DeviceControlManager.setAutostart(this, enabled)
+                        result.success(true)
+                    }
+
+                    "requestScreenCapture" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                            result.success(
+                                mapOf(
+                                    "granted" to false,
+                                    "message" to "Screen capture requires Android 10+."
+                                )
+                            )
+                        } else {
+                            try {
+                                val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE)
+                                    as MediaProjectionManager
+                                startActivityForResult(
+                                    manager.createScreenCaptureIntent(),
+                                    screenCaptureRequestCode
+                                )
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.success(
+                                    mapOf("granted" to false, "message" to (e.message ?: "unavailable"))
+                                )
+                            }
+                        }
+                    }
+
+                    "stopScreenCapture" -> {
+                        ScreenCaptureService.stop(this)
+                        result.success(true)
+                    }
+
+                    "captureFrame" -> {
+                        val quality = (call.argument<Number>("quality") ?: 85).toInt()
+                        result.success(DeviceControlManager.captureFrameJpeg(this, quality))
+                    }
+
+                    "getLocation" -> {
+                        val location = DeviceControlManager.getLocation(this)
+                        if (location == null) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "message" to "No location fix available (permission or GPS disabled)."
+                                )
+                            )
+                        } else {
+                            result.success(mapOf("success" to true) + location)
+                        }
+                    }
+
+                    "sendSms" -> {
+                        val address = call.argument<String>("address") ?: ""
+                        val body = call.argument<String>("body") ?: ""
+                        result.success(DeviceControlManager.sendSms(this, address, body))
+                    }
+
+                    "placeCall" -> {
+                        val number = call.argument<String>("number") ?: ""
+                        result.success(DeviceControlManager.placeCall(this, number))
+                    }
+
+                    "resolveContact" -> {
+                        val query = call.argument<String>("query") ?: ""
+                        result.success(DeviceControlManager.resolveContact(this, query))
+                    }
+
+                    "readContacts" -> {
+                        val limit = (call.argument<Number>("limit") ?: 30).toInt()
+                        result.success(DeviceControlManager.readContacts(this, limit))
+                    }
+
+                    "readCalendar" -> {
+                        val limit = (call.argument<Number>("limit") ?: 20).toInt()
+                        result.success(DeviceControlManager.readCalendar(this, limit))
+                    }
+
+                    "setAlarm" -> {
+                        val hour = (call.argument<Number>("hour") ?: 8).toInt()
+                        val minute = (call.argument<Number>("minute") ?: 0).toInt()
+                        val label = call.argument<String>("label") ?: ""
+                        result.success(DeviceControlManager.setAlarm(this, hour, minute, label))
+                    }
+
+                    "setVolume" -> {
+                        val percent = (call.argument<Number>("percent") ?: 50.0).toDouble() / 100.0
+                        result.success(DeviceControlManager.setVolume(this, percent))
+                    }
+
+                    "getVolume" -> result.success(DeviceControlManager.getVolume(this))
+
+                    "setBrightness" -> {
+                        val value = (call.argument<Number>("value") ?: 50.0).toDouble() / 100.0
+                        result.success(DeviceControlManager.setBrightness(this, value))
+                    }
+
+                    "setTorch" -> {
+                        val on = call.argument<Boolean>("on") ?: false
+                        result.success(DeviceControlManager.setTorch(this, on))
+                    }
+
+                    "lockScreen" -> result.success(DeviceControlManager.lockScreen(this))
+
+                    "getStorageSnapshot" ->
+                        result.success(DeviceControlManager.storageSnapshot(this))
+
+                    "getMediaSnapshot" ->
+                        result.success(DeviceControlManager.mediaCountSnapshot(this))
+
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("JARVIS_DEVICE", "Device channel error on ${call.method}: $e")
+                result.error("DEVICE_ERROR", e.message, null)
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == permissionsRequestCode) {
+            val report = permissions.mapIndexed { index, permission ->
+                permission to (
+                    index < grantResults.size &&
+                        grantResults[index] == PackageManager.PERMISSION_GRANTED
+                    )
+            }.toMap()
+            deviceChannel?.invokeMethod("onPermissionResult", report)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Bubble overlay channel — BubbleOverlayService reaches the AI core
+        // through this. Dart side registers the "ask" handler in main.dart.
+        bubbleChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUBBLE_CHANNEL_NAME)
+
+        // Device control & permissions channel (AgentService, LocationService,
+        // ScreenCaptureService, messaging, calls, alarms, hardware toggles...)
+        setupDeviceChannel(flutterEngine)
 
         // Native Continuous Speech Channel
         val sChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, speechChannelName)

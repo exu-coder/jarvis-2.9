@@ -8,13 +8,13 @@ import 'sentry_service.dart';
 /// Centralized Native Bridge Dispatcher for MethodChannel callbacks.
 ///
 /// Prevents handler collisions where multiple services overwrite
-/// `setMethodCallHandler` on `'com.privateagent/accessibility'`.
+/// `setMethodCallHandler` on `'com.jarvis.dev/accessibility'`.
 class NativeBridgeService {
   NativeBridgeService._();
   static final NativeBridgeService instance = NativeBridgeService._();
 
   static const MethodChannel _channel =
-      MethodChannel('com.privateagent/accessibility');
+      MethodChannel('com.jarvis.dev/accessibility');
 
   bool _initialized = false;
 

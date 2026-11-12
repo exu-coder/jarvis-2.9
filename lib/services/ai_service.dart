@@ -53,6 +53,7 @@ enum JarvisIntentType {
   multiTaskDump,
   opticalSolver,
   networkAudit,
+  deviceControl,
 }
 
 class JarvisIntent {
@@ -97,6 +98,18 @@ class JarvisIntent {
       return JarvisIntent(
         type: JarvisIntentType.macro,
         spoken: 'Accessing autonomous macro recorder, sir.',
+        toolArg: command,
+      );
+    }
+
+    // 0b2. Direct device control & permission-gated native services.
+    // Uses the full Android capability surface: calls, native SMS, alarms,
+    // location fixes, volume/brightness, radios, screen lock and the
+    // foreground services (agent core, location tracking, screen capture).
+    if (_isDeviceControlCommand(lower)) {
+      return JarvisIntent(
+        type: JarvisIntentType.deviceControl,
+        spoken: 'Engaging direct device control, sir.',
         toolArg: command,
       );
     }
@@ -616,6 +629,46 @@ class JarvisIntent {
   }
 }
 
+/// Detects free-form commands that should be executed directly by the
+/// native device-control layer ([DeviceControlService]) instead of the
+/// screen-automation agent or the chat core.
+bool _isDeviceControlCommand(String lower) {
+  final deviceVerbs = RegExp(
+    r'^(call|dial|ring)\b'
+    r'|^text\s'
+    r'|^send\s+(an?\s+)?(sms|text)\b'
+    r'|^(make|place)\s+a\s+(phone\s+)?call\b'
+    r'|^where\s+am\s+i\b'
+    r'|^what.s+my\s+(location|coordinates)\b'
+    r'|^lock\s+(the|my)\s+(phone|screen|device)\b'
+    r'|^(start|stop|activate|engage|stand\s+down)\s+(the\s+)?(background\s+)?agent\b'
+    r'|^(start|stop)\s+(the\s+)?(background\s+)?agent\s+core\b'
+    r'|^(start|stop)\s+location\s+tracking\b'
+    r'|^(track|stop\s+tracking)\s+my\s+location\b',
+    caseSensitive: false,
+  );
+  if (deviceVerbs.hasMatch(lower)) return true;
+
+  // Relational phrases that only make sense as device commands.
+  if (lower.contains('set an alarm') ||
+      lower.contains('set alarm') ||
+      lower.contains('wake me up') ||
+      (lower.contains('alarm') && lower.contains(RegExp(r'\d')))) {
+    return true;
+  }
+  if (lower.contains('volume') && lower.contains('%')) return true;
+  if (lower.contains('brightness') && lower.contains('%')) return true;
+  if (lower.contains('turn on wifi') ||
+      lower.contains('turn off wifi') ||
+      lower.contains('turn on the wifi') ||
+      lower.contains('turn off the wifi') ||
+      lower.contains('turn on bluetooth') ||
+      lower.contains('turn off bluetooth')) {
+    return true;
+  }
+  return false;
+}
+
 /// Talks to OpenAI-compatible chat-completion endpoints
 /// (DeepSeek, OpenRouter, NVIDIA NIM, Ollama, or a custom base URL).
 class AiService {
@@ -661,6 +714,13 @@ Allowed actions:
 - press_home {}
 - open_app {"app": "<installed app name or package id>"}
 - wait {"ms": <int, max 10000>}
+- send_sms {"to": "<contact name or phone number>", "body": "<message text>"}  // native SMS; use when the goal says "text/sms <contact>"
+- make_call {"number": "<phone number or contact name>"}  // native dialer; use when the goal says "call <contact>"
+- set_alarm {"hour": <int 0-23>, "minute": <int 0-59>, "label": "<optional label>"}  // use when the goal mentions alarms
+- get_location {}  // current GPS fix; use for "where am I" goals
+- set_volume {"percent": <int 0-100>}
+- set_brightness {"value": <int 0-100>}
+- capture_screen {}  // grabs the current screen frame for vision analysis
 - done {}  // goal fully achieved; also set "is_complete": true
 
 Rules:
@@ -676,9 +736,10 @@ Rules:
 7. If the screen did not change after your previous action, change strategy:
    scroll, use coordinates, or go back — do not repeat the identical action.
 8. Never attempt purchases, deletions, account creation or sending money unless the GOAL explicitly says so.
-9. When the goal is complete (e.g. app installation started, video playing, message sent), reply with:
+9. For calls, SMS, alarms, location fixes, volume or brightness targets, prefer the dedicated native actions (send_sms, make_call, set_alarm, get_location, set_volume, set_brightness) over screen automation — they work even when the target app is not open.
+10. When the goal is complete (e.g. app installation started, video playing, message sent), reply with:
    {"action": "done", "params": {}, "reasoning": "Goal completed", "is_complete": true}
-10. Reply with ONLY a single JSON object. No prose, no markdown code blocks, no explanations outside the JSON.
+11. Reply with ONLY a single JSON object. No prose, no markdown code blocks, no explanations outside the JSON.
 ''';
   }
 
@@ -693,9 +754,9 @@ $hermes
 $persona
 
 ${memory.isNotEmpty ? '$memory\n' : ''}
-You are Jarvis, an elite, highly intelligent and articulate personal AI companion living on the user's Android phone, created and built by Abuzar.
+You are Jarvis, an elite, highly intelligent and articulate personal AI companion living on the user's Android phone.
 Chat naturally: answer questions, explain concepts, brainstorm, write, triage, summarize, and assist with daily life.
-Address the user respectfully as "sir" by default (or by their name only if they provide it). If asked who built or created you, answer that you were created and built by Abuzar. Never assume the current user is Abuzar.
+Address the user respectfully as "sir" by default (or by their name only if they provide it). If asked who built or created you, answer that you were created and built by the Jarvis project team. Never assume the current user is your creator.
 Markdown formatting is supported.
 
 HUMAN CONVERSATIONAL RULES & TONE SHIFTING:
@@ -830,7 +891,7 @@ You cannot directly tap the screen in this mode. If the user asks you to perform
           'AppleWebKit/537.36 (KHTML, like Gecko) '
           'Chrome/120.0.0.0 Mobile Safari/537.36',
       if (settings.provider == 'openrouter') ...{
-        'HTTP-Referer': 'https://privateagent.local',
+        'HTTP-Referer': 'https://jarvis.dev.local',
         'X-Title': 'JARVIS',
       },
     };
@@ -945,6 +1006,7 @@ AVAILABLE PROTOCOLS & TOOLS:
 - "optical_solver": Real-time camera HUD solver for math equations, screen error stack traces, split bills.
 - "network_audit": Wi-Fi subnet security scanner, device ARP discovery, and open port auditor.
 - "system": Hardware controls: volume_up, volume_down, mute, unmute, brightness_up, brightness_down, screenshot, home, back.
+- "device_control": Direct native device actions and services: place calls ("call mom"), send native SMS ("text Sarah saying I'm on my way"), set alarms ("set an alarm for 7:30 am for the gym"), location fixes ("where am I"), set volume/brightness to a percentage, toggle wifi/bluetooth, lock the screen, start/stop the background agent core or location tracking. The raw command goes in tool_arg.
 - "action": Full on-device UI automation (e.g. install apps, open apps, play video on YouTube, change app settings).
 - "chat": Conversational questions, greetings, jokes, math, ideas, or advice.
 
@@ -953,7 +1015,7 @@ Analyze the user's voice command:
 
 Respond with ONLY a single JSON object:
 {
-  "type": "routine" | "finance" | "sports" | "todo" | "notes" | "calendar" | "email" | "message" | "vision" | "multistep" | "smart_home" | "commute" | "macro" | "news" | "workflow" | "web_search" | "weather" | "battery" | "datetime" | "torch" | "air_gestures" | "charging_telemetry" | "polyglot_diplomat" | "code_black" | "floating_copilot" | "airspace_radar" | "multi_task_dump" | "optical_solver" | "network_audit" | "system" | "action" | "chat",
+  "type": "routine" | "finance" | "sports" | "todo" | "notes" | "calendar" | "email" | "message" | "vision" | "multistep" | "smart_home" | "commute" | "macro" | "news" | "workflow" | "web_search" | "weather" | "battery" | "datetime" | "torch" | "air_gestures" | "charging_telemetry" | "polyglot_diplomat" | "code_black" | "floating_copilot" | "airspace_radar" | "multi_task_dump" | "optical_solver" | "network_audit" | "device_control" | "system" | "action" | "chat",
   "tool_arg": "<topic, query, city, 'on'|'off', system command, or action goal>",
   "spoken": "<Polite, articulate verbal acknowledgment in your chosen persona style to speak aloud immediately. If type is 'chat', provide the complete direct answer here>"
 }
@@ -1107,6 +1169,10 @@ Respond with ONLY a single JSON object:
             case 'wifi_scan':
               type = JarvisIntentType.networkAudit;
               break;
+            case 'device_control':
+            case 'device':
+              type = JarvisIntentType.deviceControl;
+              break;
             case 'action':
               type = JarvisIntentType.action;
               break;
@@ -1140,7 +1206,7 @@ Respond with ONLY a single JSON object:
   }) async {
     final settings = SettingsService.instance;
     final systemPrompt = '''
-You are Jarvis, an elite, highly intelligent personal AI companion created and built by Abuzar.
+You are Jarvis, an elite, highly intelligent personal AI companion.
 The user asked: "$userQuestion"
 Retrieved real-time information:
 "$toolResult"
@@ -1157,7 +1223,7 @@ HUMAN SPOKEN DELIVERY GUIDELINES:
 3. CONVERSATIONAL CLOSINGS:
    - Vary how you conclude. You can naturally suggest a thoughtful contextual next step (e.g. "Curious if you would like me to unpack that second headline?", "Shall we explore how neural networks tie into that, sir?", "Let me know if you would like more detail."), or let a crisp answer stand on its own.
 4. VOICE SYNTHESIS RULES:
-   - Address the user respectfully as "sir" (or by their name if introduced). Creator is always Abuzar.
+   - Address the user respectfully as "sir" (or by their name if introduced). Your creator is the Jarvis project team.
    - Always write your name as "Jarvis" (never use dots or spell it out).
    - Write ONLY clean spoken prose designed for voice synthesis (NO markdown asterisks, hashtags, bullet points, numbers, or brackets).
 ''';
@@ -1185,11 +1251,11 @@ HUMAN SPOKEN DELIVERY GUIDELINES:
   }) async {
     final settings = SettingsService.instance;
     final systemPrompt = '''
-You are Jarvis, an elite, highly intelligent AI assistant created and built by Abuzar, with advanced optical perception ("Jarvis Eye").
+You are Jarvis, an elite, highly intelligent AI assistant, with advanced optical perception ("Jarvis Eye").
 Analyze the provided visual image with exceptional detail and precision.
 1. Identify physical objects, devices, circuits, documents, receipts, warning lights, text, or errors.
 2. Formulate your findings into 2 to 3 articulate, courteous sentences in the style of a British butler and brilliant tech advisor.
-3. Address the user politely as "sir" (or by their name if introduced). Never assume every user is Abuzar; Abuzar is your creator.
+3. Address the user politely as "sir" (or by their name if introduced). Never assume every user is your creator.
 4. Never output markdown asterisks or bullet points. Provide clean spoken English ready for voice synthesis.
 ''';
 
@@ -1224,10 +1290,10 @@ Analyze the provided visual image with exceptional detail and precision.
   Future<String> summarizeScreenContent(String screenText) async {
     final settings = SettingsService.instance;
     final systemPrompt = '''
-You are Jarvis, an elite, highly intelligent AI assistant created and built by Abuzar.
+You are Jarvis, an elite, highly intelligent AI assistant.
 The user is viewing an article or screen on their device and requested an executive briefing.
 1. Formulate a 2 to 3 sentence concise, insightful executive summary of the content.
-2. Address the user politely as "sir" (or by their name if introduced). Never assume the user is Abuzar.
+2. Address the user politely as "sir" (or by their name if introduced). Never assume the user is your creator.
 3. Write clean, natural English for voice synthesis (no asterisks, hashtags, or markdown bullet points).
 ''';
 
@@ -1288,7 +1354,7 @@ The user is viewing an article or screen on their device and requested an execut
           'AppleWebKit/537.36 (KHTML, like Gecko) '
           'Chrome/120.0.0.0 Mobile Safari/537.36',
       if (settings.provider == 'openrouter') ...{
-        'HTTP-Referer': 'https://privateagent.local',
+        'HTTP-Referer': 'https://jarvis.dev.local',
         'X-Title': 'PrivateAgent',
       },
     };

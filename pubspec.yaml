@@ -38,6 +38,9 @@ dependencies:
   # Networking
   http: ^1.4.0
 
+  # HUD home (WebView-based UI)
+  webview_flutter: ^4.10.0
+
   # Voice
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
@@ -105,6 +108,7 @@ flutter:
   assets:
     - assets/icon/genie_logo.png
     - assets/images/
+    - assets/hud/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -13,7 +13,7 @@ class AirGestureService extends ChangeNotifier {
   AirGestureService._();
 
   static final AirGestureService instance = AirGestureService._();
-  static const MethodChannel _channel = MethodChannel('com.privateagent/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   bool _isEnabled = false;
   String _lastGesture = 'none';

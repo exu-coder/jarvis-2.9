@@ -12,6 +12,7 @@ import '../models/task_history_entry.dart';
 import '../models/task_step.dart';
 import 'ai_service.dart';
 import 'app_launcher_service.dart';
+import 'device_control_service.dart';
 import 'recovery_engine.dart';
 import 'screen_automation_service.dart';
 import 'settings_service.dart';
@@ -39,6 +40,7 @@ class TaskExecutor extends ChangeNotifier {
   final ScreenAutomationService _automation = ScreenAutomationService.instance;
   final AiService _ai = AiService.instance;
   final AppLauncherService _apps = AppLauncherService.instance;
+  final DeviceControlService _device = DeviceControlService.instance;
   final SkillMemoryService _skills = SkillMemoryService.instance;
   final RecoveryEngine _recovery = RecoveryEngine();
 
@@ -522,6 +524,41 @@ class TaskExecutor extends ChangeNotifier {
           final ms = (step.intParam('ms') ?? 1500).clamp(100, 10000);
           await Future.delayed(Duration(milliseconds: ms));
           return true;
+        case TaskStep.actionSendSms:
+          return await _sendSmsStep(step);
+        case TaskStep.actionMakeCall:
+          return await _makeCallStep(step);
+        case TaskStep.actionSetAlarm:
+          return await _setAlarmStep(step);
+        case TaskStep.actionGetLocation:
+          return await _getLocationStep();
+        case TaskStep.actionSetVolume:
+          final percent = (step.intParam('percent') ?? 50).clamp(0, 100);
+          final res = await _device.setVolumePercent(percent.toDouble());
+          if (res['success'] == true) {
+            _log(ChatMessage.system('Media volume set to $percent%.'));
+            return true;
+          }
+          _log(ChatMessage.error('Volume failed: ${res['message']}'));
+          return false;
+        case TaskStep.actionSetBrightness:
+          final value = (step.intParam('value') ?? 50).clamp(0, 100);
+          final res = await _device.setBrightness(value / 100.0);
+          if (res['success'] == true) {
+            _log(ChatMessage.system('Brightness set to $value%.'));
+            return true;
+          }
+          _log(ChatMessage.error('Brightness failed: ${res['message']}'));
+          return false;
+        case TaskStep.actionCaptureScreen:
+          final frame = await _device.captureFrame();
+          if (frame == null) {
+            _log(ChatMessage.error(
+                'Screen capture unavailable (MediaProjection consent missing).'));
+            return false;
+          }
+          _log(ChatMessage.system('Captured a screen frame for analysis.'));
+          return true;
         default:
           return false;
       }
@@ -531,8 +568,94 @@ class TaskExecutor extends ChangeNotifier {
     }
   }
 
-  String _briefParams(TaskStep step) {
-    if (step.params.isEmpty) return '';
+  // ------------------------------------------------------------------
+  // Native device-control steps
+  // ------------------------------------------------------------------
+
+  Future<bool> _sendSmsStep(TaskStep step) async {
+    var to = step.stringParam('to') ?? '';
+    final body = step.stringParam('body') ?? '';
+    if (to.isEmpty || body.isEmpty) {
+      _log(ChatMessage.error('send_sms needs "to" and "body" params.'));
+      return false;
+    }
+    String? display;
+    if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(to)) {
+      final contact = await _device.resolveContact(to);
+      if (contact['success'] == true) {
+        final c = Map<String, dynamic>.from(contact['contact'] as Map);
+        to = c['number']?.toString() ?? '';
+        display = c['name']?.toString();
+      }
+    }
+    if (to.isEmpty) {
+      _log(ChatMessage.error('Could not resolve recipient "$to".'));
+      return false;
+    }
+    final res = await _device.sendSms(address: to, body: body);
+    if (res['success'] == true) {
+      _log(ChatMessage.system('SMS sent to ${display ?? to}.'));
+      return true;
+    }
+    _log(ChatMessage.error('SMS failed: ${res['message']}'));
+    return false;
+  }
+
+  Future<bool> _makeCallStep(TaskStep step) async {
+    var number = step.stringParam('number') ?? '';
+    if (number.isEmpty) {
+      _log(ChatMessage.error('make_call needs a "number" param.'));
+      return false;
+    }
+    String? display;
+    if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(number)) {
+      final contact = await _device.resolveContact(number);
+      if (contact['success'] == true) {
+        final c = Map<String, dynamic>.from(contact['contact'] as Map);
+        number = c['number']?.toString() ?? '';
+        display = c['name']?.toString();
+      }
+    }
+    if (number.isEmpty) {
+      _log(ChatMessage.error('Could not resolve contact for the call.'));
+      return false;
+    }
+    final res = await _device.placeCall(number);
+    if (res['success'] == true) {
+      _log(ChatMessage.system('Calling ${display ?? number}.'));
+      return true;
+    }
+    _log(ChatMessage.error('Call failed: ${res['message']}'));
+    return false;
+  }
+
+  Future<bool> _setAlarmStep(TaskStep step) async {
+    final hour = step.intParam('hour') ?? 8;
+    final minute = step.intParam('minute') ?? 0;
+    final label = step.stringParam('label') ?? '';
+    final res = await _device.setAlarm(hour: hour, minute: minute, label: label);
+    if (res['success'] == true) {
+      _log(ChatMessage.system(
+          'Alarm set for $hour:${minute.toString().padLeft(2, '0')}.'));
+      return true;
+    }
+    _log(ChatMessage.error('Alarm failed: ${res['message']}'));
+    return false;
+  }
+
+  Future<bool> _getLocationStep() async {
+    final res = await _device.getLocation();
+    if (res['success'] == true) {
+      final lat = (res['latitude'] as num? ?? 0).toStringAsFixed(4);
+      final lon = (res['longitude'] as num? ?? 0).toStringAsFixed(4);
+      _log(ChatMessage.system('Location fix: lat $lat, lon $lon.'));
+      return true;
+    }
+    _log(ChatMessage.error('No location fix: ${res['message']}'));
+    return false;
+  }
+
+  String _briefParams(TaskStep step) {    if (step.params.isEmpty) return '';
     final entries = step.params.entries
         .map((e) => '${e.key}=${e.value}')
         .join(' ');

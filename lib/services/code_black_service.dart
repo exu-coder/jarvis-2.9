@@ -22,14 +22,12 @@ class CodeBlackService extends ChangeNotifier {
     'override alpha',
     'stand down jarvis',
     'stand down',
-    'abuzar protocol',
     'jarvis override',
     'alpha protocol',
     'disarm',
     'cancel lockdown',
     'stop code black',
     'emergency override',
-    'abuzar',
     'unlock',
   ];
 

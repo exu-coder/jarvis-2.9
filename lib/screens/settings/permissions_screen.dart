@@ -178,6 +178,49 @@ class _PermissionsScreenState extends State<PermissionsScreen>
                 const SizedBox(height: 10),
               ],
 
+              const SizedBox(height: 14),
+              _sectionTitle('Awareness & Sensors'),
+              for (final p in _service.permissions.where(
+                (p) =>
+                    p.type == AppPermissionType.location ||
+                    p.type == AppPermissionType.backgroundLocation ||
+                    p.type == AppPermissionType.camera ||
+                    p.type == AppPermissionType.bodySensors ||
+                    p.type == AppPermissionType.activity,
+              )) ...[
+                _permissionCard(theme, p),
+                const SizedBox(height: 10),
+              ],
+
+              const SizedBox(height: 14),
+              _sectionTitle('Device Control'),
+              for (final p in _service.permissions.where(
+                (p) =>
+                    p.type == AppPermissionType.phone ||
+                    p.type == AppPermissionType.calendar ||
+                    p.type == AppPermissionType.mediaStorage ||
+                    p.type == AppPermissionType.allFiles ||
+                    p.type == AppPermissionType.bluetooth ||
+                    p.type == AppPermissionType.usageStats,
+              )) ...[
+                _permissionCard(theme, p),
+                const SizedBox(height: 10),
+              ],
+
+              const SizedBox(height: 14),
+              _sectionTitle('Special Access'),
+              for (final p in _service.permissions.where(
+                (p) =>
+                    p.type == AppPermissionType.writeSettings ||
+                    p.type == AppPermissionType.exactAlarm ||
+                    p.type == AppPermissionType.installPackages ||
+                    p.type == AppPermissionType.dndPolicy ||
+                    p.type == AppPermissionType.deviceAdmin,
+              )) ...[
+                _permissionCard(theme, p),
+                const SizedBox(height: 10),
+              ],
+
               const SizedBox(height: 16),
               OutlinedButton.icon(
                 icon: const Icon(Icons.settings_outlined, size: 18),

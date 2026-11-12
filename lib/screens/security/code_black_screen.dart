@@ -32,7 +32,7 @@ class _CodeBlackScreenState extends State<CodeBlackScreen>
     'DEFENSE PROTOCOL: Shizuku / ADB isolation active. USB debugging disabled.',
     'WARNING: Unauthorized tactile inputs detected. Geo-coordinates locked.',
     'ENCRYPTION LAYER: 4096-bit AES lockdown engaged. Volatile cache scrubbed.',
-    'TRANSMITTING SATELLITE TELEMETRY TO ABUZAR DEFENSE COMMAND...',
+    'TRANSMITTING SATELLITE TELEMETRY TO DEFENSE COMMAND...',
   ];
 
   @override

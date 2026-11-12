@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/home/home_screen.dart';
+import 'screens/hud/hud_home_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'services/charging_telemetry_service.dart';
 import 'services/settings_service.dart';
@@ -71,7 +71,7 @@ class _PrivateAgentAppState extends State<PrivateAgentApp> {
       darkTheme: AppTheme.dark(),
       themeMode: _settings.themeMode,
       home: _settings.onboardingComplete
-          ? const HomeScreen()
+          ? const HudHomeScreen()
           : OnboardingScreen(onFinished: () => setState(() {})),
     );
   }

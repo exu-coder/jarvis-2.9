@@ -6,7 +6,7 @@ class AppUsageService {
   AppUsageService._();
   static final AppUsageService instance = AppUsageService._();
 
-  static const MethodChannel _channel = MethodChannel('com.privateagent/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
 
   Future<List<Map<String, dynamic>>> getInstalledApps({int limit = 10}) async {
     try {

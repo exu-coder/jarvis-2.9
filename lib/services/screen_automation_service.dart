@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 import '../models/screen_node.dart';
 
-/// Thin, safe wrapper around the `com.privateagent/accessibility`
+/// Thin, safe wrapper around the `com.jarvis.dev/accessibility`
 /// MethodChannel implemented by `MainActivity` / `AgentAccessibilityService`.
 ///
 /// Also owns the text formatting that turns the raw node list into a compact,
@@ -12,7 +12,7 @@ class ScreenAutomationService {
   static final ScreenAutomationService instance = ScreenAutomationService._();
 
   static const MethodChannel _channel =
-      MethodChannel('com.privateagent/accessibility');
+      MethodChannel('com.jarvis.dev/accessibility');
 
   List<ScreenNode> _lastNodes = const [];
 
