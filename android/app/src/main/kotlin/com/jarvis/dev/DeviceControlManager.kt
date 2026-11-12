@@ -299,7 +299,7 @@ object DeviceControlManager {
     fun openPanel(context: Context, panel: String): Boolean {
         val action = when (panel) {
             "wifi" -> if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_WIFI else null
-            "bluetooth" -> if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_BLUETOOTH else null
+            "bluetooth" -> if (Build.VERSION.SDK_INT >= 29) "android.settings.BLUETOOTH_SETTINGS" else null
             "internet" -> if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_INTERNET_CONNECTIVITY else null
             "nfc" -> if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_NFC else null
             "volume" -> if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_VOLUME else null
@@ -353,7 +353,7 @@ object DeviceControlManager {
             }
             mapOf<String, Any>("success" to true, "message" to "Started $service service.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "start failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "start failed"))
         }
     }
 
@@ -371,7 +371,7 @@ object DeviceControlManager {
             }
             mapOf<String, Any>("success" to true, "message" to "Stopped $service service.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "stop failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "stop failed"))
         }
     }
 
@@ -395,7 +395,7 @@ object DeviceControlManager {
         return mapOf<String, Any>(
             "base64" to Base64.encodeToString(bytes, Base64.NO_WRAP),
             "size" to bytes.size,
-            "path" to saveToCache(context, bytes)
+            "path" to (saveToCache(context, bytes) ?: "")
         )
     }
 
@@ -470,7 +470,7 @@ object DeviceControlManager {
             }
             mapOf<String, Any>("success" to true, "message" to "SMS sent to $address.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "SMS failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "SMS failed"))
         }
     }
 
@@ -488,7 +488,7 @@ object DeviceControlManager {
             val mode = if (action == Intent.ACTION_CALL) "Call placed" else "Dialer opened"
             mapOf<String, Any>("success" to true, "message" to "$mode for $number.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "call failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "call failed"))
         }
     }
 
@@ -525,7 +525,7 @@ object DeviceControlManager {
                 "count" to contacts.size
             )
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "contacts read failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "contacts read failed"))
         }
     }
 
@@ -575,7 +575,7 @@ object DeviceControlManager {
                 mapOf<String, Any>("success" to false, "message" to "No contact matched \"$query\".")
             }
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "contact lookup failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "contact lookup failed"))
         }
     }
 
@@ -618,7 +618,7 @@ object DeviceControlManager {
             }
             mapOf<String, Any>("success" to true, "events" to events, "count" to events.size)
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "calendar read failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "calendar read failed"))
         }
     }
 
@@ -636,7 +636,7 @@ object DeviceControlManager {
             context.startActivity(intent)
             mapOf<String, Any>("success" to true, "message" to "Alarm set for ${"%02d".format(hour)}:${"%02d".format(minute)}.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "alarm failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "alarm failed"))
         }
     }
 
@@ -657,7 +657,7 @@ object DeviceControlManager {
                 "message" to "Volume blocked (Do Not Disturb active?): ${e.message}"
             )
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "volume failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "volume failed"))
         }
     }
 
@@ -672,7 +672,7 @@ object DeviceControlManager {
                 "ringerMode" to audio.ringerMode
             )
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "volume read failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "volume read failed"))
         }
     }
 
@@ -701,7 +701,7 @@ object DeviceControlManager {
                 "message" to "Brightness set to ${(clamped * 100).toInt()}%."
             )
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "brightness failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "brightness failed"))
         }
     }
 
@@ -717,7 +717,7 @@ object DeviceControlManager {
             camera.setTorchMode(id, on)
             mapOf<String, Any>("success" to true, "message" to if (on) "Torch on." else "Torch off.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "torch failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "torch failed"))
         }
     }
 
@@ -733,7 +733,7 @@ object DeviceControlManager {
             dpm.lockNow()
             mapOf<String, Any>("success" to true, "message" to "Screen locked.")
         } catch (e: Exception) {
-            mapOf<String, Any>("success" to false, "message" to e.message ?: "lock failed")
+            mapOf<String, Any>("success" to false, "message" to (e.message ?: "lock failed"))
         }
     }
 

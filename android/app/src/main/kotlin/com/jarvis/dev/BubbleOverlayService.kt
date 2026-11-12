@@ -118,8 +118,8 @@ class BubbleOverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         density = resources.displayMetrics.density
         val metrics = windowManager.currentWindowMetricsCompat()
-        screenW = metrics.width
-        screenH = metrics.height
+        screenW = metrics.x
+        screenH = metrics.y
 
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val savedX = prefs.getInt(KEY_X, Int.MIN_VALUE)
@@ -175,7 +175,7 @@ class BubbleOverlayService : Service() {
 
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
-            when (event.action) {
+            return when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     moved = false
                     downX = event.rawX
