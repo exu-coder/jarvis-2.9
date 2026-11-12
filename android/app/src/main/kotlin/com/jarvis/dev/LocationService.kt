@@ -134,12 +134,12 @@ class LocationService : Service() {
             val listenerHandler = android.os.Handler(android.os.Looper.getMainLooper())
             if (enabled.contains(LocationManager.NETWORK_PROVIDER)) {
                 manager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER, 10_000L, 15f, internalListener, listenerHandler
+                    LocationManager.NETWORK_PROVIDER, 10_000L, 15f, internalListener, listenerHandler.looper
                 )
             }
             if (enabled.contains(LocationManager.GPS_PROVIDER)) {
                 manager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER, 5_000L, 8f, internalListener, listenerHandler
+                    LocationManager.GPS_PROVIDER, 5_000L, 8f, internalListener, listenerHandler.looper
                 )
             }
         } catch (_: SecurityException) {

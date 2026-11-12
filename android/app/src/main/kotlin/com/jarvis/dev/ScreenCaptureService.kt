@@ -125,6 +125,11 @@ class ScreenCaptureService : Service() {
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         try {
             val projection = manager.getMediaProjection(resultCode, data)
+            if (projection == null) {
+                android.util.Log.e("JARVIS_CAPTURE", "MediaProjection consent was not granted.")
+                stopSelf()
+                return
+            }
 
             val callback = object : MediaProjection.Callback() {
                 override fun onStop() {

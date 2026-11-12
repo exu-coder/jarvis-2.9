@@ -325,7 +325,7 @@ object DeviceControlManager {
 
     fun serviceStatus(context: Context): Map<String, Any> {
         val location = LocationService.lastLocation
-        return mapOf(
+        return mapOf<String, Any>(
             "agent" to AgentService.isRunning,
             "screenCapture" to ScreenCaptureService.isRunning,
             "location" to LocationService.isRunning,
@@ -342,18 +342,18 @@ object DeviceControlManager {
                 "agent" -> AgentService.start(context)
                 "location" -> LocationService.start(context)
                 "connectedDevice" -> ConnectedDeviceService.start(context)
-                "screenCapture" -> return mapOf(
+                "screenCapture" -> return mapOf<String, Any>(
                     "success" to false,
                     "message" to "Screen capture needs MediaProjection consent first (requestScreenCapture)."
                 )
-                else -> return mapOf(
+                else -> return mapOf<String, Any>(
                     "success" to false,
                     "message" to "Unknown service: $service"
                 )
             }
-            mapOf("success" to true, "message" to "Started $service service.")
+            mapOf<String, Any>("success" to true, "message" to "Started $service service.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "start failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "start failed")
         }
     }
 
@@ -364,14 +364,14 @@ object DeviceControlManager {
                 "location" -> LocationService.stop(context)
                 "connectedDevice" -> ConnectedDeviceService.stop(context)
                 "screenCapture" -> ScreenCaptureService.stop(context)
-                else -> return mapOf(
+                else -> return mapOf<String, Any>(
                     "success" to false,
                     "message" to "Unknown service: $service"
                 )
             }
-            mapOf("success" to true, "message" to "Stopped $service service.")
+            mapOf<String, Any>("success" to true, "message" to "Stopped $service service.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "stop failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "stop failed")
         }
     }
 
@@ -392,7 +392,7 @@ object DeviceControlManager {
         val stream = ByteArrayOutputStream()
         bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, stream)
         val bytes = stream.toByteArray()
-        return mapOf(
+        return mapOf<String, Any>(
             "base64" to Base64.encodeToString(bytes, Base64.NO_WRAP),
             "size" to bytes.size,
             "path" to saveToCache(context, bytes)
@@ -441,7 +441,7 @@ object DeviceControlManager {
         return best
     }
 
-    private fun locationToMap(location: Location): Map<String, Any> = mapOf(
+    private fun locationToMap(location: Location): Map<String, Any> = mapOf<String, Any>(
         "latitude" to location.latitude,
         "longitude" to location.longitude,
         "altitude" to (if (location.hasAltitude()) location.altitude else 0.0),
@@ -457,7 +457,7 @@ object DeviceControlManager {
 
     fun sendSms(context: Context, address: String, body: String): Map<String, Any> {
         if (!context.isGranted(Manifest.permission.SEND_SMS)) {
-            return mapOf("success" to false, "message" to "SEND_SMS permission not granted.")
+            return mapOf<String, Any>("success" to false, "message" to "SEND_SMS permission not granted.")
         }
         return try {
             @Suppress("DEPRECATION")
@@ -468,9 +468,9 @@ object DeviceControlManager {
             } else {
                 smsManager.sendMultipartTextMessage(address, null, parts, null, null)
             }
-            mapOf("success" to true, "message" to "SMS sent to $address.")
+            mapOf<String, Any>("success" to true, "message" to "SMS sent to $address.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "SMS failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "SMS failed")
         }
     }
 
@@ -486,15 +486,15 @@ object DeviceControlManager {
                 Intent(action, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             val mode = if (action == Intent.ACTION_CALL) "Call placed" else "Dialer opened"
-            mapOf("success" to true, "message" to "$mode for $number.")
+            mapOf<String, Any>("success" to true, "message" to "$mode for $number.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "call failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "call failed")
         }
     }
 
     fun readContacts(context: Context, limit: Int): Map<String, Any> {
         if (!context.isGranted(Manifest.permission.READ_CONTACTS)) {
-            return mapOf("success" to false, "message" to "READ_CONTACTS permission not granted.")
+            return mapOf<String, Any>("success" to false, "message" to "READ_CONTACTS permission not granted.")
         }
         return try {
             val contacts = mutableListOf<Map<String, String>>()
@@ -519,20 +519,20 @@ object DeviceControlManager {
                     }
                 }
             }
-            mapOf(
+            mapOf<String, Any>(
                 "success" to true,
                 "contacts" to contacts,
                 "count" to contacts.size
             )
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "contacts read failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "contacts read failed")
         }
     }
 
     /** Resolves a spoken name like "mom" to the best matching contact number. */
     fun resolveContact(context: Context, query: String): Map<String, Any> {
         if (!context.isGranted(Manifest.permission.READ_CONTACTS)) {
-            return mapOf("success" to false, "message" to "READ_CONTACTS permission not granted.")
+            return mapOf<String, Any>("success" to false, "message" to "READ_CONTACTS permission not granted.")
         }
         return try {
             val needle = query.trim().lowercase()
@@ -570,18 +570,18 @@ object DeviceControlManager {
             }
             val match = exact ?: fuzzy
             if (match != null) {
-                mapOf("success" to true, "contact" to match)
+                mapOf<String, Any>("success" to true, "contact" to match)
             } else {
-                mapOf("success" to false, "message" to "No contact matched \"$query\".")
+                mapOf<String, Any>("success" to false, "message" to "No contact matched \"$query\".")
             }
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "contact lookup failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "contact lookup failed")
         }
     }
 
     fun readCalendar(context: Context, limit: Int): Map<String, Any> {
         if (!context.isGranted(Manifest.permission.READ_CALENDAR)) {
-            return mapOf("success" to false, "message" to "READ_CALENDAR permission not granted.")
+            return mapOf<String, Any>("success" to false, "message" to "READ_CALENDAR permission not granted.")
         }
         return try {
             val now = System.currentTimeMillis()
@@ -607,7 +607,7 @@ object DeviceControlManager {
                 val locIdx = it.getColumnIndex(CalendarContract.Instances.EVENT_LOCATION)
                 while (it.moveToNext() && events.size < limit) {
                     events.add(
-                        mapOf(
+                        mapOf<String, Any>(
                             "title" to (if (titleIdx >= 0) (it.getString(titleIdx) ?: "") else ""),
                             "begin" to (if (beginIdx >= 0) it.getLong(beginIdx) else 0L),
                             "end" to (if (endIdx >= 0) it.getLong(endIdx) else 0L),
@@ -616,9 +616,9 @@ object DeviceControlManager {
                     )
                 }
             }
-            mapOf("success" to true, "events" to events, "count" to events.size)
+            mapOf<String, Any>("success" to true, "events" to events, "count" to events.size)
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "calendar read failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "calendar read failed")
         }
     }
 
@@ -634,9 +634,9 @@ object DeviceControlManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            mapOf("success" to true, "message" to "Alarm set for ${"%02d".format(hour)}:${"%02d".format(minute)}.")
+            mapOf<String, Any>("success" to true, "message" to "Alarm set for ${"%02d".format(hour)}:${"%02d".format(minute)}.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "alarm failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "alarm failed")
         }
     }
 
@@ -650,14 +650,14 @@ object DeviceControlManager {
             val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             val target = (percent.coerceIn(0.0, 1.0) * max).toInt().coerceIn(0, max)
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-            mapOf("success" to true, "message" to "Media volume set to ${(percent * 100).toInt()}%.")
+            mapOf<String, Any>("success" to true, "message" to "Media volume set to ${(percent * 100).toInt()}%.")
         } catch (e: SecurityException) {
-            mapOf(
+            mapOf<String, Any>(
                 "success" to false,
                 "message" to "Volume blocked (Do Not Disturb active?): ${e.message}"
             )
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "volume failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "volume failed")
         }
     }
 
@@ -666,19 +666,19 @@ object DeviceControlManager {
             val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-            mapOf(
+            mapOf<String, Any>(
                 "success" to true,
                 "volume" to if (max > 0) current.toDouble() / max else 0.0,
                 "ringerMode" to audio.ringerMode
             )
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "volume read failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "volume read failed")
         }
     }
 
     fun setBrightness(context: Context, value: Double): Map<String, Any> {
         if (!Settings.System.canWrite(context)) {
-            return mapOf(
+            return mapOf<String, Any>(
                 "success" to false,
                 "message" to "WRITE_SETTINGS special access not granted."
             )
@@ -696,12 +696,12 @@ object DeviceControlManager {
                 Settings.System.SCREEN_BRIGHTNESS,
                 target
             )
-            mapOf(
+            mapOf<String, Any>(
                 "success" to true,
                 "message" to "Brightness set to ${(clamped * 100).toInt()}%."
             )
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "brightness failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "brightness failed")
         }
     }
 
@@ -713,11 +713,11 @@ object DeviceControlManager {
                 characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true &&
                     characteristics.get(CameraCharacteristics.LENS_FACING) ==
                     CameraCharacteristics.LENS_FACING_BACK
-            } ?: return mapOf("success" to false, "message" to "No flashlight unit found.")
+            } ?: return mapOf<String, Any>("success" to false, "message" to "No flashlight unit found.")
             camera.setTorchMode(id, on)
-            mapOf("success" to true, "message" to if (on) "Torch on." else "Torch off.")
+            mapOf<String, Any>("success" to true, "message" to if (on) "Torch on." else "Torch off.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "torch failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "torch failed")
         }
     }
 
@@ -725,15 +725,15 @@ object DeviceControlManager {
         return try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             if (!isDeviceAdminActive(context)) {
-                return mapOf(
+                return mapOf<String, Any>(
                     "success" to false,
                     "message" to "Device administrator not active; enable it in settings first."
                 )
             }
             dpm.lockNow()
-            mapOf("success" to true, "message" to "Screen locked.")
+            mapOf<String, Any>("success" to true, "message" to "Screen locked.")
         } catch (e: Exception) {
-            mapOf("success" to false, "message" to e.message ?: "lock failed")
+            mapOf<String, Any>("success" to false, "message" to e.message ?: "lock failed")
         }
     }
 
@@ -746,13 +746,13 @@ object DeviceControlManager {
             val stat = StatFs(Environment.getDataDirectory().absolutePath)
             val total = stat.totalBytes
             val free = stat.availableBytes
-            mapOf(
+            mapOf<String, Any>(
                 "totalBytes" to total,
                 "freeBytes" to free,
                 "usedPercent" to ((total - free) * 100.0 / total)
             )
         } catch (e: Exception) {
-            mapOf("error" to (e.message ?: "stat failed"))
+            mapOf<String, Any>("error" to (e.message ?: "stat failed"))
         }
     }
 
@@ -761,13 +761,13 @@ object DeviceControlManager {
             val images = countMedia(context, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
             val videos = countMedia(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
             val audio = countMedia(context, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
-            mapOf(
+            mapOf<String, Any>(
                 "images" to images,
                 "videos" to videos,
                 "audio" to audio
             )
         } catch (e: Exception) {
-            mapOf("error" to (e.message ?: "media query failed"))
+            mapOf<String, Any>("error" to (e.message ?: "media query failed"))
         }
     }
 
