@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../home/home_screen.dart';
+import '../settings/permissions_screen.dart';
+import '../settings/settings_screen.dart';
 import '../../services/ai_service.dart';
 
 /// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 HUD home — the `assets/hud/uI.html` arc-reactor interface
@@ -11,6 +12,7 @@ import '../../services/ai_service.dart';
 ///
 /// Bridge contract (from the HTML side):
 ///   • `JARVIS_NATIVE.ask(text)`          → user sends a message
+///   • `JARVIS_NATIVE.postMessage('jv:…')` → HUD control commands
 ///   • `window.onJarvisReply(text)`       → host delivers the AI answer
 ///   • `window.onJarvisError(message)`    → host delivers an error
 class HudHomeScreen extends StatefulWidget {
@@ -21,6 +23,8 @@ class HudHomeScreen extends StatefulWidget {
 }
 
 class _HudHomeScreenState extends State<HudHomeScreen> {
+  static const _commandPrefix = 'jv:';
+
   WebViewController? _controller;
   bool _ready = false;
   // Serialised bridge: uI.html shows one typing indicator at a time, so
@@ -47,10 +51,54 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
       )
       ..addJavaScriptChannel(
         'JARVIS_NATIVE',
-        onMessageReceived: (msg) => _enqueueAsk(msg.message),
+        onMessageReceived: (msg) {
+          final text = msg.message;
+          if (text.startsWith(_commandPrefix)) {
+            _handleCommand(text.substring(_commandPrefix.length));
+          } else {
+            _enqueueAsk(text);
+          }
+        },
       )
       ..loadFlutterAsset('assets/hud/uI.html');
     _controller = controller;
+  }
+
+  /// HUD chrome actions raised from `uI.html` (permissions, settings).
+  void _handleCommand(String command) {
+    if (!mounted) return;
+    switch (command) {
+      case 'permissions':
+        Navigator.of(context).push(
+          _hudRoute(const PermissionsScreen()),
+        );
+      case 'settings':
+        Navigator.of(context).push(
+          _hudRoute(const SettingsScreen()),
+        );
+    }
+  }
+
+  PageRouteBuilder<T> _hudRoute<T>(Widget page) {
+    return PageRouteBuilder<T>(
+      transitionDuration: const Duration(milliseconds: 260),
+      reverseTransitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   /// Handles one `JARVIS_NATIVE.ask(text)` call from the HUD.
@@ -92,25 +140,6 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
             WebViewWidget(controller: _controller!)
           else
             const SizedBox.expand(),
-          // Legacy Material dashboard, one tap away (bottom-right keeps the
-          // HUD's top clock + status clear; floating controls are bottom-center).
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: SafeArea(
-              child: IconButton(
-                icon: const Icon(
-                  Icons.apps_rounded,
-                  color: Color(0x6642E8FF),
-                  size: 22,
-                ),
-                tooltip: 'Dashboard',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );

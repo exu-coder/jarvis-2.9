@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#11141a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>J.A.R.V.I.S. · Permissions</title>
+  <style>
+    :root {
+      --accent: #4f8cff;
+      --accent-dim: rgba(79, 140, 255, .28);
+      --accent-soft: rgba(79, 140, 255, .10);
+      --warn: #e8a33d;
+      --warn-soft: rgba(232, 163, 61, .12);
+      --ok: #3ecf8e;
+      --ok-soft: rgba(62, 207, 142, .12);
+      --bg: #11141a;
+      --surface: #181b22;
+      --surface-2: #1e222b;
+      --border: #2a2f3a;
+      --text: #e8eaed;
+      --text-dim: #9aa1ac;
+      --font: "Times New Roman", Times, Baskerville, Georgia, serif;
+      --dock-h: 82px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      overscroll-behavior: none;
+      touch-action: pan-y;
+    }
+
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      letter-spacing: .04em;
+      -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none;
+      user-select: none;
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, #1a1f29 0%, var(--bg) 60%);
+    }
+
+    /* ---------- shell ---------- */
+    #stage {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding:
+        calc(env(safe-area-inset-top, 0px) + 18px)
+        calc(env(safe-area-inset-right, 0px) + 16px)
+        calc(env(safe-area-inset-bottom, 0px) + var(--dock-h) + 16px)
+        calc(env(safe-area-inset-left, 0px) + 16px);
+      z-index: 5;
+    }
+
+    /* ---------- header ---------- */
+    #head {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #head .kicker {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    #head .title {
+      font-size: clamp(19px, 5.4vw, 26px);
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    #head .meta {
+      margin-top: 6px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    #head .meta b { color: var(--warn); font-weight: 600; }
+
+    #clock {
+      text-align: right;
+      white-space: nowrap;
+      color: var(--text-dim);
+    }
+
+    #clock .big {
+      font-size: clamp(16px, 5vw, 22px);
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    #tz {
+      font-size: 10.5px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* ---------- gauge ---------- */
+    #gauge-wrap {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 18px 0 12px;
+      position: relative;
+    }
+
+    #gauge {
+      width: clamp(130px, 38vw, 184px);
+      height: clamp(130px, 38vw, 184px);
+      transform: rotate(-90deg);
+      overflow: visible;
+    }
+
+    #gauge .track {
+      fill: none;
+      stroke: var(--surface-2);
+      stroke-width: 8;
+    }
+
+    #gauge .progress {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 8;
+      stroke-linecap: round;
+      transition: stroke-dashoffset .8s cubic-bezier(.22, 1, .36, 1), stroke .4s ease;
+    }
+
+    #gauge .progress.full { stroke: var(--ok); }
+
+    #gauge-logo {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: clamp(72px, 20vw, 100px);
+      height: clamp(72px, 20vw, 100px);
+      transform: translate(-50%, calc(-50% + 4px));
+      border-radius: 50%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px var(--border);
+      z-index: 2;
+    }
+
+    #gauge-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, calc(-50% + 4px));
+      text-align: center;
+      pointer-events: none;
+      z-index: 3;
+      width: 100%;
+    }
+
+    #gauge-value {
+      font-size: clamp(14px, 4vw, 18px);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+      margin-top: 32px;
+    }
+
+    #gauge-label {
+      margin-top: 3px;
+      font-size: 9.5px;
+      font-weight: 500;
+      letter-spacing: .06em;
+      color: var(--text-dim);
+    }
+
+    #gauge-count {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* ---------- list ---------- */
+    #scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      padding-right: 2px;
+      mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 26px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 26px), transparent 100%);
+    }
+
+    #scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+    .sector { margin-bottom: 20px; }
+
+    .sector-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 2px 8px;
+    }
+
+    .sector-head .rule {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .sector-head .name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .sector-head .frac {
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 40px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 14px;
+      margin-bottom: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+      transition: border-color .2s ease, background .2s ease;
+    }
+
+    .row.granted {
+      border-color: rgba(62, 207, 142, .35);
+      background: linear-gradient(180deg, var(--ok-soft), var(--surface) 60%);
+    }
+
+    .row.busy { opacity: .6; }
+
+    .code {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+      color: var(--text-dim);
+      font-size: 10px;
+      font-weight: 600;
+      background: var(--surface-2);
+    }
+
+    .row.granted .code {
+      color: var(--ok);
+      background: var(--ok-soft);
+    }
+
+    .body { min-width: 0; }
+
+    .row-top {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .row-top h3 {
+      font-size: clamp(13px, 3.2vw, 14.5px);
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .row p {
+      margin-top: 3px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-dim);
+    }
+
+    .chip {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: var(--text-dim);
+      background: var(--surface-2);
+      white-space: nowrap;
+    }
+
+    .chip.ok { color: var(--ok); background: var(--ok-soft); }
+    .chip.warn { color: var(--warn); background: var(--warn-soft); }
+
+    .act-btn {
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+      padding: 9px 13px;
+      cursor: pointer;
+      transition: border-color .2s ease, background .2s ease, transform .15s ease;
+      white-space: nowrap;
+    }
+
+    .act-btn:hover { border-color: var(--accent-dim); background: var(--accent-soft); }
+    .act-btn:active { transform: scale(.96); }
+    .act-btn:disabled { opacity: .4; pointer-events: none; }
+
+    /* ---------- dock ---------- */
+    #dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding:
+        10px
+        calc(env(safe-area-inset-right, 0px) + 12px)
+        calc(env(safe-area-inset-bottom, 0px) + 12px)
+        calc(env(safe-area-inset-left, 0px) + 12px);
+      background: linear-gradient(to top, var(--bg) 55%, rgba(17, 20, 26, 0) 100%);
+      border-top: 1px solid var(--border);
+    }
+
+    .dock-btn {
+      font-family: var(--font);
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+      transition: border-color .2s ease, background .2s ease, transform .15s ease;
+    }
+
+    .dock-btn:active { transform: scale(.97); }
+
+    #grantAll {
+      flex: 1 1 auto;
+      font-size: 13.5px;
+      color: #0b1420;
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 13px 14px;
+    }
+
+    #grantAll:hover { background: #3f7ae8; }
+
+    #grantAll.done {
+      background: var(--ok);
+      border-color: var(--ok);
+      color: #0b1f16;
+    }
+
+    #grantAll:disabled { opacity: .5; pointer-events: none; }
+
+    .ghost {
+      flex: 0 0 auto;
+      font-size: 11.5px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 13px 13px;
+    }
+
+    .ghost:hover { border-color: var(--accent-dim); background: var(--accent-soft); }
+
+    #back {
+      flex: 0 0 auto;
+      width: 46px;
+      font-size: 15px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    #back:hover { border-color: var(--accent-dim); background: var(--accent-soft); }
+
+    /* ---------- toast ---------- */
+    #toast {
+      position: absolute;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + var(--dock-h) + 18px);
+      transform: translateX(-50%) translateY(10px);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+      color: var(--text);
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      z-index: 45;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s ease, transform .3s ease;
+      max-width: 88vw;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    }
+
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ---------- boot ---------- */
+    #boot {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-dim);
+      transition: opacity .35s ease, visibility .35s ease;
+    }
+
+    #boot .spin {
+      width: 30px;
+      height: 30px;
+      border: 2px solid var(--surface-2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .9s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #boot.gone { opacity: 0; visibility: hidden; }
+
+    /* ---------- small screens ---------- */
+    @media (max-height: 640px) and (orientation: portrait) {
+      #gauge { width: clamp(104px, 30vw, 140px); height: clamp(104px, 30vw, 140px); }
+      #gauge-logo { width: clamp(58px, 16vw, 78px); height: clamp(58px, 16vw, 78px); }
+      #gauge-value { margin-top: 22px; }
+    }
+
+    @media (max-width: 360px) {
+      .row { grid-template-columns: 36px 1fr; }
+      .code { width: 36px; height: 36px; font-size: 9px; }
+      .row .act-btn { grid-column: 2; justify-self: start; margin-top: 7px; }
+    }
+
+    @media (orientation: landscape) {
+      #gauge { width: clamp(90px, 22vh, 118px); height: clamp(90px, 22vh, 118px); }
+      #gauge-logo { width: clamp(50px, 13vh, 68px); height: clamp(50px, 13vh, 68px); }
+      #gauge-value { margin-top: 18px; font-size: clamp(12px, 3vh, 15px); }
+      #head .title { font-size: clamp(15px, 3.4vh, 20px); }
+      :root { --dock-h: 68px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <header id="head">
+      <div>
+        <div class="kicker">J.A.R.V.I.S. · Security</div>
+        <div class="title">Permissions</div>
+        <div class="meta">Clearance audit &nbsp;<b id="audit">—</b></div>
+      </div>
+      <div id="clock">
+        <div class="big" id="time">--:--:--</div>
+        <div id="date">—</div>
+        <div id="tz">DHAKA · BST</div>
+      </div>
+    </header>
+
+    <section id="gauge-wrap">
+      <svg id="gauge" viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="track" cx="100" cy="100" r="90"></circle>
+        <circle id="prog" class="progress" cx="100" cy="100" r="90"></circle>
+      </svg>
+      <img id="gauge-logo" src="https://i.ibb.co.com/jkznH759/81b81b38c72e148ce4ddfcae172733f0.jpg" alt="">
+      <div id="gauge-center">
+        <div id="gauge-value">0%</div>
+        <div id="gauge-label">AUTHORITY</div>
+        <div id="gauge-count">0 / 0 CLEARANCES</div>
+      </div>
+    </section>
+
+    <div id="scroll">
+      <div id="sections"></div>
+    </div>
+  </div>
+
+  <footer id="dock">
+    <button id="back" class="dock-btn" aria-label="Close">✕</button>
+    <button id="grantAll" class="dock-btn">Authorize all</button>
+    <button id="rescan" class="dock-btn ghost">Rescan</button>
+    <button id="sysSettings" class="dock-btn ghost">System</button>
+  </footer>
+
+  <div id="toast"></div>
+
+  <div id="boot"><div class="spin"></div><div>Decrypting clearances</div></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var prog      = document.getElementById('prog');
+      var sections  = document.getElementById('sections');
+      var scroll    = document.getElementById('scroll');
+      var gaugeVal  = document.getElementById('gauge-value');
+      var gaugeCnt  = document.getElementById('gauge-count');
+      var auditEl   = document.getElementById('audit');
+      var grantAll  = document.getElementById('grantAll');
+      var boot      = document.getElementById('boot');
+      var toastEl   = document.getElementById('toast');
+      var timeEl    = document.getElementById('time');
+      var dateEl    = document.getElementById('date');
+      var tzEl      = document.getElementById('tz');
+
+      var R = 90;
+      var CIRC = 2 * Math.PI * R;
+      prog.style.strokeDasharray = CIRC;
+      prog.style.strokeDashoffset = CIRC;
+
+      var busy = false;
+      var toastTimer = null;
+
+      /* ---------- Dhaka clock (12h, matches home) ---------- */
+      var DHAKA_TZ = 'Asia/Dhaka';
+
+      function dhakaTime12() {
+        return new Date().toLocaleTimeString('en-US', {
+          timeZone: DHAKA_TZ,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        });
+      }
+
+      function tick() {
+        var d = new Date();
+        timeEl.textContent = dhakaTime12();
+        dateEl.textContent =
+          d.toLocaleDateString('en-GB', {
+            timeZone: DHAKA_TZ,
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          }).toUpperCase();
+        tzEl.textContent = 'DHAKA · BST';
+      }
+      tick();
+      setInterval(tick, 1000);
+
+      /* ---------- host bridge ---------- */
+      function send(payload) {
+        var msg = JSON.stringify(payload);
+        if (window.JARVIS_PERMS && typeof window.JARVIS_PERMS.postMessage === 'function') {
+          window.JARVIS_PERMS.postMessage(msg);
+          return true;
+        }
+        return false;
+      }
+
+      function toast(text) {
+        toastEl.textContent = text;
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+          toastEl.classList.remove('show');
+        }, 2400);
+      }
+
+      /* ---------- render ---------- */
+      function setProgress(granted, total) {
+        var ratio = total > 0 ? granted / total : 0;
+        prog.style.strokeDashoffset = CIRC * (1 - ratio);
+        prog.classList.toggle('full', total > 0 && granted === total);
+        gaugeVal.textContent = Math.round(ratio * 100) + '%';
+        gaugeCnt.textContent = granted + ' / ' + total + ' CLEARANCES';
+        grantAll.textContent = total > 0 && granted === total ? 'All authorized' : 'Authorize all';
+        grantAll.classList.toggle('done', total > 0 && granted === total);
+      }
+
+      function rowEl(item) {
+        var row = document.createElement('article');
+        row.className = 'row' + (item.granted ? ' granted' : '');
+        row.dataset.type = item.type;
+
+        var code = document.createElement('div');
+        code.className = 'code';
+        code.textContent = item.code || item.type.slice(0, 3).toUpperCase();
+
+        var body = document.createElement('div');
+        body.className = 'body';
+
+        var top = document.createElement('div');
+        top.className = 'row-top';
+
+        var h3 = document.createElement('h3');
+        h3.textContent = item.title;
+
+        var chip = document.createElement('span');
+        if (item.granted) {
+          chip.className = 'chip ok';
+          chip.textContent = 'Granted';
+        } else if (item.system) {
+          chip.className = 'chip warn';
+          chip.textContent = 'Configure';
+        } else {
+          chip.className = 'chip';
+          chip.textContent = 'Required';
+        }
+
+        top.appendChild(h3);
+        top.appendChild(chip);
+
+        var desc = document.createElement('p');
+        desc.textContent = item.description;
+
+        body.appendChild(top);
+        body.appendChild(desc);
+
+        var act = document.createElement('button');
+        act.className = 'act-btn';
+        act.textContent = item.granted ? 'Manage' : (item.system ? 'Open' : 'Authorize');
+        act.addEventListener('click', function () {
+          if (busy) return;
+          row.classList.add('busy');
+          act.disabled = true;
+          if (!send({ action: 'grant', type: item.type })) {
+            row.classList.remove('busy');
+            act.disabled = false;
+            toast('Native bridge offline');
+          }
+        });
+
+        row.appendChild(code);
+        row.appendChild(body);
+        row.appendChild(act);
+        return row;
+      }
+
+      window.matrixRender = function (payload) {
+        var data;
+        try {
+          data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        } catch (e) { return; }
+
+        busy = false;
+        sections.innerHTML = '';
+
+        (data.sections || []).forEach(function (sector) {
+          if (!sector.items || !sector.items.length) return;
+
+          var granted = sector.items.filter(function (i) { return i.granted; }).length;
+
+          var wrap = document.createElement('div');
+          wrap.className = 'sector';
+
+          var head = document.createElement('div');
+          head.className = 'sector-head';
+
+          var name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = sector.title;
+
+          var frac = document.createElement('span');
+          frac.className = 'frac';
+          frac.textContent = granted + '/' + sector.items.length;
+
+          var rule = document.createElement('span');
+          rule.className = 'rule';
+
+          head.appendChild(name);
+          head.appendChild(rule);
+          head.appendChild(frac);
+          wrap.appendChild(head);
+
+          sector.items.forEach(function (item) { wrap.appendChild(rowEl(item)); });
+          sections.appendChild(wrap);
+        });
+
+        setProgress(data.granted || 0, data.total || 0);
+
+        var stamp = dhakaTime12();
+        auditEl.textContent = stamp + ' · SYNCED';
+
+        boot.classList.add('gone');
+      };
+
+      window.matrixBusy = function (flag) {
+        busy = !!flag;
+        grantAll.disabled = busy;
+        if (!busy) {
+          var rows = document.querySelectorAll('.row.busy');
+          for (var i = 0; i < rows.length; i++) {
+            rows[i].classList.remove('busy');
+            var b = rows[i].querySelector('.act-btn');
+            if (b) b.disabled = false;
+          }
+        }
+      };
+
+      window.matrixToast = function (text) { toast(String(text || '')); };
+
+      window.matrixScrollTop = function () {
+        scroll.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      /* ---------- dock actions ---------- */
+      grantAll.addEventListener('click', function () {
+        if (busy) return;
+        if (!send({ action: 'all' })) { toast('Native bridge offline'); return; }
+        toast('Requesting runtime clearances…');
+      });
+
+      document.getElementById('rescan').addEventListener('click', function () {
+        if (busy) return;
+        if (!send({ action: 'refresh' })) { toast('Native bridge offline'); return; }
+        toast('Re-auditing permission state…');
+      });
+
+      document.getElementById('sysSettings').addEventListener('click', function () {
+        if (!send({ action: 'appInfo' })) toast('Native bridge offline');
+      });
+
+      document.getElementById('back').addEventListener('click', function () {
+        if (!send({ action: 'close' })) toast('Native bridge offline');
+      });
+
+      /* Ask the host for the first snapshot once the page is alive. */
+      if (!send({ action: 'ready' })) {
+        /* Browser preview: render a demo matrix so the design can be reviewed. */
+        window.matrixRender({
+          granted: 9,
+          total: 23,
+          sections: [
+            {
+              title: 'Communications & Inboxes',
+              items: [
+                { type: 'sms', code: 'SMS', title: 'SMS Inbox & Messaging', description: 'Reads incoming SMS, verification codes and drafts replies.', granted: true },
+                { type: 'contacts', code: 'CON', title: 'Contacts Access', description: 'Resolves names for commands like "Text John".', granted: true },
+                { type: 'notifications', code: 'NTF', title: 'System Notifications', description: 'Sends briefings, alerts and background status updates.', granted: false }
+              ]
+            },
+            {
+              title: 'Core Voice & Automation',
+              items: [
+                { type: 'microphone', code: 'MIC', title: 'Microphone & Voice Input', description: 'Wake-word detection and hands-free desk mode listening.', granted: true },
+                { type: 'accessibility', code: 'ACC', title: 'Accessibility Service', description: 'Taps, types and scrolls autonomously across apps.', granted: false, system: true },
+                { type: 'overlay', code: 'OVR', title: 'Display Over Other Apps', description: 'Floating holographic bubble above other applications.', granted: true, system: true }
+              ]
+            }
+          ]
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

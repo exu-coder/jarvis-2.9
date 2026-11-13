@@ -1,9 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../services/permission_manager_service.dart';
 
-/// Centralized permissions management screen for user ease:
-/// Audits and requests all required permissions for Voice, SMS, Email, and Device Automation.
+/// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 authority matrix — the permissions console, rendered from
+/// `assets/hud/permissions.html` so it matches the `uI.html` HUD exactly
+/// (same palette, scanlines, serif type, chamfered panels).
+///
+/// Bridge contract (JS ↔ Dart, JSON over the `JARVIS_PERMS` channel):
+///   ready | refresh | appInfo | close | grant{type} | all
 class PermissionsScreen extends StatefulWidget {
   const PermissionsScreen({super.key});
 
@@ -15,16 +22,104 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     with WidgetsBindingObserver {
   final _service = PermissionManagerService.instance;
 
+  WebViewController? _controller;
+  bool _pageReady = false;
+
+  /// Short HUD glyphs for each clearance, shown in the row's code plate.
+  static const Map<AppPermissionType, String> _codes = {
+    AppPermissionType.microphone: 'MIC',
+    AppPermissionType.camera: 'CAM',
+    AppPermissionType.location: 'LOC',
+    AppPermissionType.backgroundLocation: 'BGL',
+    AppPermissionType.sms: 'SMS',
+    AppPermissionType.phone: 'TEL',
+    AppPermissionType.contacts: 'CON',
+    AppPermissionType.calendar: 'CAL',
+    AppPermissionType.mediaStorage: 'MED',
+    AppPermissionType.allFiles: 'FIL',
+    AppPermissionType.bluetooth: 'BT',
+    AppPermissionType.nearbyWifi: 'WIF',
+    AppPermissionType.bodySensors: 'SEN',
+    AppPermissionType.activity: 'ACT',
+    AppPermissionType.notifications: 'NTF',
+    AppPermissionType.accessibility: 'ACC',
+    AppPermissionType.overlay: 'OVR',
+    AppPermissionType.notificationListener: 'NLS',
+    AppPermissionType.usageStats: 'USG',
+    AppPermissionType.writeSettings: 'WRI',
+    AppPermissionType.installPackages: 'PKG',
+    AppPermissionType.exactAlarm: 'ALM',
+    AppPermissionType.dndPolicy: 'DND',
+    AppPermissionType.deviceAdmin: 'ADM',
+    AppPermissionType.batteryOptimization: 'BAT',
+  };
+
+  /// Sector layout mirrors the grouping the HUD console renders.
+  static const List<(String, List<AppPermissionType>)> _sectors = [
+    (
+      'Communications & Inboxes',
+      [
+        AppPermissionType.sms,
+        AppPermissionType.notificationListener,
+        AppPermissionType.contacts,
+        AppPermissionType.notifications,
+      ],
+    ),
+    (
+      'Core Voice & Automation',
+      [
+        AppPermissionType.microphone,
+        AppPermissionType.accessibility,
+        AppPermissionType.overlay,
+        AppPermissionType.batteryOptimization,
+      ],
+    ),
+    (
+      'Awareness & Sensors',
+      [
+        AppPermissionType.location,
+        AppPermissionType.backgroundLocation,
+        AppPermissionType.camera,
+        AppPermissionType.bodySensors,
+        AppPermissionType.activity,
+      ],
+    ),
+    (
+      'Device Control',
+      [
+        AppPermissionType.phone,
+        AppPermissionType.calendar,
+        AppPermissionType.mediaStorage,
+        AppPermissionType.allFiles,
+        AppPermissionType.bluetooth,
+        AppPermissionType.usageStats,
+      ],
+    ),
+    (
+      'Special Access',
+      [
+        AppPermissionType.writeSettings,
+        AppPermissionType.exactAlarm,
+        AppPermissionType.installPackages,
+        AppPermissionType.dndPolicy,
+        AppPermissionType.deviceAdmin,
+      ],
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _service.addListener(_onServiceChanged);
+    _initController();
     _service.refresh();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _service.removeListener(_onServiceChanged);
     super.dispose();
   }
 
@@ -35,323 +130,126 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('App Permissions'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => _service.refresh(),
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: _service,
-        builder: (context, _) {
-          if (_service.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final granted = _service.grantedCount;
-          final total = _service.totalCount;
-          final ratio = total == 0 ? 0.0 : granted / total;
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
-            children: [
-              // Summary Hub Card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.security_rounded,
-                              color: theme.colorScheme.primary,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '$granted of $total Permissions Active',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  granted == total
-                                      ? 'All systems fully authorized for autonomous operation.'
-                                      : 'Some capabilities require user permission to function.',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: ratio,
-                          minHeight: 6,
-                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            ratio == 1.0 ? Colors.green : theme.colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              icon: const Icon(Icons.done_all_rounded, size: 18),
-                              label: const Text('Grant Core Permissions'),
-                              onPressed: () async {
-                                await _service.requestAllCorePermissions();
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Permissions requested'),
-                                      duration: Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Permissions List
-              _sectionTitle('Communications & Inboxes'),
-              for (final p in _service.permissions.where(
-                (p) =>
-                    p.type == AppPermissionType.sms ||
-                    p.type == AppPermissionType.notificationListener ||
-                    p.type == AppPermissionType.contacts ||
-                    p.type == AppPermissionType.notifications,
-              )) ...[
-                _permissionCard(theme, p),
-                const SizedBox(height: 10),
-              ],
-
-              const SizedBox(height: 14),
-              _sectionTitle('Core Voice & Automation'),
-              for (final p in _service.permissions.where(
-                (p) =>
-                    p.type == AppPermissionType.microphone ||
-                    p.type == AppPermissionType.accessibility ||
-                    p.type == AppPermissionType.overlay ||
-                    p.type == AppPermissionType.batteryOptimization,
-              )) ...[
-                _permissionCard(theme, p),
-                const SizedBox(height: 10),
-              ],
-
-              const SizedBox(height: 14),
-              _sectionTitle('Awareness & Sensors'),
-              for (final p in _service.permissions.where(
-                (p) =>
-                    p.type == AppPermissionType.location ||
-                    p.type == AppPermissionType.backgroundLocation ||
-                    p.type == AppPermissionType.camera ||
-                    p.type == AppPermissionType.bodySensors ||
-                    p.type == AppPermissionType.activity,
-              )) ...[
-                _permissionCard(theme, p),
-                const SizedBox(height: 10),
-              ],
-
-              const SizedBox(height: 14),
-              _sectionTitle('Device Control'),
-              for (final p in _service.permissions.where(
-                (p) =>
-                    p.type == AppPermissionType.phone ||
-                    p.type == AppPermissionType.calendar ||
-                    p.type == AppPermissionType.mediaStorage ||
-                    p.type == AppPermissionType.allFiles ||
-                    p.type == AppPermissionType.bluetooth ||
-                    p.type == AppPermissionType.usageStats,
-              )) ...[
-                _permissionCard(theme, p),
-                const SizedBox(height: 10),
-              ],
-
-              const SizedBox(height: 14),
-              _sectionTitle('Special Access'),
-              for (final p in _service.permissions.where(
-                (p) =>
-                    p.type == AppPermissionType.writeSettings ||
-                    p.type == AppPermissionType.exactAlarm ||
-                    p.type == AppPermissionType.installPackages ||
-                    p.type == AppPermissionType.dndPolicy ||
-                    p.type == AppPermissionType.deviceAdmin,
-              )) ...[
-                _permissionCard(theme, p),
-                const SizedBox(height: 10),
-              ],
-
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                label: const Text('Open System App Settings'),
-                onPressed: () => _service.openAppInfo(),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  void _onServiceChanged() {
+    // Loading hops are noise for the HUD; only repaint settled snapshots.
+    if (!_service.isLoading) _pushState();
   }
 
-  Widget _sectionTitle(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-        child: Text(
-          text.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+  void _initController() {
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF11141A))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            _pageReady = true;
+            _pushState();
+          },
         ),
-      );
+      )
+      ..addJavaScriptChannel(
+        'JARVIS_PERMS',
+        onMessageReceived: (msg) => _onHostMessage(msg.message),
+      )
+      ..loadFlutterAsset('assets/hud/permission.html');
+    _controller = controller;
+  }
 
-  Widget _permissionCard(ThemeData theme, AppPermissionInfo p) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: p.isGranted
-                    ? Colors.green.withValues(alpha: 0.12)
-                    : theme.colorScheme.primary.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                p.icon,
-                size: 20,
-                color: p.isGranted ? Colors.green : theme.colorScheme.primary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          p.title,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: p.isGranted
-                              ? Colors.green.withValues(alpha: 0.12)
-                              : Colors.amber.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: p.isGranted
-                                ? Colors.green.withValues(alpha: 0.4)
-                                : Colors.amber.withValues(alpha: 0.5),
-                            width: 0.6,
-                          ),
-                        ),
-                        child: Text(
-                          p.isGranted ? 'GRANTED' : (p.isSystemSettingsOnly ? 'CONFIGURE' : 'REQUIRED'),
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
-                            color: p.isGranted ? Colors.green : Colors.amber.shade900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    p.description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontSize: 11.5,
-                    ),
-                  ),
-                  if (!p.isGranted) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: Icon(
-                          p.isSystemSettingsOnly
-                              ? Icons.open_in_new_rounded
-                              : Icons.check_circle_outline,
-                          size: 14,
-                        ),
-                        label: Text(
-                          p.isSystemSettingsOnly ? 'Open Settings' : 'Grant Permission',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                        ),
-                        onPressed: () async {
-                          await _service.requestPermission(p.type);
-                        },
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+  Future<void> _run(String script) async {
+    if (!_pageReady || _controller == null) return;
+    await _controller!.runJavaScript(script);
+  }
+
+  Map<String, dynamic> _snapshot() {
+    final all = _service.permissions;
+    return {
+      'granted': _service.grantedCount,
+      'total': _service.totalCount,
+      'sections': [
+        for (final (title, types) in _sectors)
+          if (all.any((p) => types.contains(p.type)))
+            {
+              'title': title,
+              'items': [
+                for (final p in all.where((p) => types.contains(p.type)))
+                  {
+                    'type': p.type.name,
+                    'code': _codes[p.type] ?? p.type.name.toUpperCase(),
+                    'title': p.title,
+                    'description': p.description,
+                    'granted': p.isGranted,
+                    'system': p.isSystemSettingsOnly,
+                  },
+              ],
+            },
+      ],
+    };
+  }
+
+  Future<void> _pushState() async {
+    if (!_pageReady || _controller == null) return;
+    final payload = jsonEncode(_snapshot());
+    await _run('window.matrixRender($payload);');
+    await _run('window.matrixBusy(${_service.isLoading ? 'true' : 'false'});');
+  }
+
+  Future<void> _toast(String text) async {
+    await _run('window.matrixToast(${jsonEncode(text)});');
+  }
+
+  Future<void> _onHostMessage(String raw) async {
+    Map<String, dynamic> cmd;
+    try {
+      cmd = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+
+    switch (cmd['action']) {
+      case 'ready':
+        _pageReady = true;
+        await _service.refresh();
+        await _pushState();
+      case 'refresh':
+        await _service.refresh();
+        await _pushState();
+      case 'appInfo':
+        await _service.openAppInfo();
+      case 'close':
+        if (mounted) Navigator.of(context).maybePop();
+      case 'all':
+        await _run('window.matrixBusy(true);');
+        await _service.requestAllCorePermissions();
+        await _pushState();
+        await _toast(
+          _service.grantedCount == _service.totalCount
+              ? 'ALL CLEARANCES AUTHORIZED'
+              : 'RUNTIME CLEARANCES UPDATED',
+        );
+      case 'grant':
+        final name = cmd['type'] as String?;
+        AppPermissionType? type;
+        for (final t in AppPermissionType.values) {
+          if (t.name == name) {
+            type = t;
+            break;
+          }
+        }
+        if (type == null) return;
+        await _run('window.matrixBusy(true);');
+        await _service.requestPermission(type);
+        await _pushState();
+        await _toast('CLEARANCE RE-AUDITED');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF11141A),
+      body: _controller == null
+          ? const ColoredBox(color: Color(0xFF11141A))
+          : WebViewWidget(controller: _controller!),
     );
   }
 }
-
