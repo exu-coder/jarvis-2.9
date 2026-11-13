@@ -234,7 +234,7 @@ class SettingsService extends ChangeNotifier {
   }
 
   /// Whether JARVIS listens continuously like Google Home without tapping.
-  bool get jarvisAlwaysOn => _prefs?.getBool('jarvis_always_on') ?? true;
+  bool get jarvisAlwaysOn => _prefs?.getBool('jarvis_always_on') ?? false;
   Future<void> setJarvisAlwaysOn(bool value) async {
     await _prefs?.setBool('jarvis_always_on', value);
     notifyListeners();
@@ -258,7 +258,7 @@ class SettingsService extends ChangeNotifier {
 
   /// Whether to prioritize ultra-realistic neural human voices over offline TTS.
   bool get useNeuralVoice =>
-      _prefs?.getBool('jarvis_use_neural_voice') ?? true;
+      _prefs?.getBool('jarvis_use_neural_voice') ?? false;
   Future<void> setUseNeuralVoice(bool value) async {
     await _prefs?.setBool('jarvis_use_neural_voice', value);
     notifyListeners();

@@ -13,14 +13,14 @@
      + Voice button in chat bar
      ============================================================ */
   :root {
-    --bg:            #05080f;
-    --card:          #0d1524;
-    --card-2:        #101a2e;
-    --border:        #1c2a44;
-    --border-strong: #274064;
-    --primary:       #22d3ee;
-    --primary-dim:   #0e7490;
-    --primary-glow:  rgba(34, 211, 238, .35);
+    --bg:            #01060c;
+    --card:          #06131f;
+    --card-2:        #0a1926;
+    --border:        #0f2a3a;
+    --border-strong: #1b4b5e;
+    --primary:       #42e8ff;
+    --primary-dim:   #1b7f96;
+    --primary-glow:  rgba(66, 232, 255, .35);
     --gold:          #fbbf24;
     --success:       #34d399;
     --danger:        #f87171;
@@ -37,7 +37,7 @@
 
   body {
     background:
-      radial-gradient(900px 500px at 30% -10%, rgba(99,102,241,.08), transparent 60%),
+      radial-gradient(900px 500px at 30% -10%, rgba(66,232,255,.06), transparent 60%),
       var(--bg);
     font-family: var(--font-text);
     color: var(--text);
@@ -68,10 +68,10 @@
     touch-action: none;
     display: grid; place-items: center;
     background:
-      radial-gradient(circle at 35% 30%, #d9fbff 0 10%, var(--primary) 40%, #0891b2 70%, #164e63 100%);
+      radial-gradient(circle at 35% 30%, #d9fbff 0 10%, var(--primary) 40%, #2ec7e6 70%, #123c4a 100%);
     box-shadow:
       0 0 22px var(--primary-glow),
-      0 0 60px rgba(34,211,238,.18),
+      0 0 60px rgba(66,232,255,.18),
       inset 0 0 14px rgba(255,255,255,.5);
     z-index: 100;
     user-select: none;
@@ -84,7 +84,7 @@
   .bubble .halo,
   .bubble .halo::before {
     position: absolute; inset: -7px; border-radius: 50%;
-    border: 1px solid rgba(34,211,238,.4);
+    border: 1px solid rgba(66,232,255,.4);
     pointer-events: none;
   }
   .bubble .halo::before {
@@ -103,7 +103,7 @@
     object-fit: cover;
     display: block;
     pointer-events: none;
-    box-shadow: 0 0 0 2px rgba(34,211,238,.55), 0 0 10px rgba(34,211,238,.4);
+    box-shadow: 0 0 0 2px rgba(66,232,255,.55), 0 0 10px rgba(66,232,255,.4);
   }
 
   .bubble .badge {
@@ -129,7 +129,7 @@
     border: 1px solid var(--border-strong);
     border-radius: 20px;
     box-shadow:
-      0 0 0 1px rgba(34,211,238,.12),
+      0 0 0 1px rgba(66,232,255,.12),
       0 22px 70px rgba(0,0,0,.7);
     z-index: 90;
     overflow: hidden;
@@ -146,13 +146,13 @@
     display: flex; align-items: center; gap: 10px;
     padding: 12px 14px;
     border-bottom: 1px solid var(--border);
-    background: rgba(34,211,238,.05);
+    background: rgba(66,232,255,.05);
     flex: 0 0 auto;
   }
   .panel-head .mini {
     width: 26px; height: 26px; border-radius: 50%;
     background:
-      radial-gradient(circle at 35% 30%, #d9fbff 0 12%, var(--primary) 45%, #0891b2 100%);
+      radial-gradient(circle at 35% 30%, #d9fbff 0 12%, var(--primary) 45%, #2ec7e6 100%);
     display: grid; place-items: center;
     box-shadow: 0 0 12px var(--primary-glow);
     flex: 0 0 auto;
@@ -163,7 +163,7 @@
     border-radius: 50%;
     object-fit: cover;
     display: block;
-    box-shadow: 0 0 0 1.5px rgba(34,211,238,.55);
+    box-shadow: 0 0 0 1.5px rgba(66,232,255,.55);
   }
   .panel-head .titles { flex: 1; min-width: 0; }
   .panel-head .name {
@@ -224,7 +224,7 @@
   .t-row.user { flex-direction: row-reverse; }
   .t-row.user .t-msg {
     background: linear-gradient(135deg, #0e3a44, #0b2b3a);
-    border-color: rgba(34,211,238,.4);
+    border-color: rgba(66,232,255,.4);
     border-bottom-right-radius: 4px;
   }
 
@@ -255,7 +255,7 @@
   .chat-input::placeholder { color: var(--text-faint); }
   .chat-input:focus {
     border-color: var(--primary-dim);
-    box-shadow: 0 0 0 3px rgba(34,211,238,.12);
+    box-shadow: 0 0 0 3px rgba(66,232,255,.12);
   }
 
   /* Voice button */
@@ -284,16 +284,16 @@
 
   /* Active (listening) state */
   .mic-btn.active {
-    background: linear-gradient(135deg, #0e7490, #0891b2);
+    background: linear-gradient(135deg, #1b7f96, #2ec7e6);
     border-color: var(--primary);
-    box-shadow: 0 0 18px var(--primary-glow), 0 0 0 3px rgba(34,211,238,.15);
+    box-shadow: 0 0 18px var(--primary-glow), 0 0 0 3px rgba(66,232,255,.15);
   }
   .mic-btn.active svg { stroke: #eafcff; }
   .mic-btn.active::after {
     content: "";
     position: absolute; inset: -4px;
     border-radius: 50%;
-    border: 1px solid rgba(34,211,238,.5);
+    border: 1px solid rgba(66,232,255,.5);
     animation: mic-pulse 1.4s ease-out infinite;
     pointer-events: none;
   }
@@ -306,7 +306,7 @@
   .send-btn {
     width: 42px; height: 42px; border-radius: 50%;
     border: 1px solid var(--primary-dim);
-    background: linear-gradient(135deg, #0e7490, #0891b2);
+    background: linear-gradient(135deg, #1b7f96, #2ec7e6);
     display: grid; place-items: center;
     cursor: pointer;
     flex: 0 0 auto;

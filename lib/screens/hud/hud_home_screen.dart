@@ -7,7 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../settings/permissions_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../services/ai_service.dart';
-import '../../services/floating_copilot_service.dart';
+import '../../services/device_control_service.dart';
 import '../../services/voice_service.dart';
 
 /// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 HUD home — the `assets/hud/uI.html` arc-reactor interface
@@ -103,10 +103,19 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
       case 'settings':
         Navigator.of(context).push(_hudRoute(const SettingsScreen()));
       case 'bubble':
-        final ok = await FloatingCopilotService.instance.activateOverlay();
-        await _hudToast(
-          ok ? 'FLOATING CO-PILOT ACTIVE' : 'OVERLAY PERMISSION REQUIRED',
-        );
+        // Deploy the HUD orb (`assets/hud/bubble_orb.html` +
+        // `assets/hud/bubble.html`) through BubbleOverlayService — the same
+        // HTML overlay UI, live above every app.
+        final device = DeviceControlService.instance;
+        if (await device.isBubbleRunning()) {
+          await device.stopBubble();
+          await _hudToast('FLOATING BUBBLE RETIRED');
+        } else {
+          final ok = await device.startBubble();
+          await _hudToast(
+            ok ? 'FLOATING BUBBLE DEPLOYED' : 'OVERLAY CLEARANCE REQUIRED',
+          );
+        }
       case 'listen':
         await _startListening();
       case 'stopListen':

@@ -153,6 +153,9 @@ class VoiceService {
       }
 
       await _tts.awaitSpeakCompletion(true);
+      await _tts.setVolume(1.0);
+      await _tts.setQueueMode(0);
+      await _tts.setSharedInstance(true);
 
       _tts.setStartHandler(() {
         isSpeaking.value = true;
@@ -267,6 +270,8 @@ class VoiceService {
     final wasListening = _listening;
     if (wasListening) {
       await stopListening();
+      // Let the recognizer release the audio session before TTS claims it.
+      await Future<void>.delayed(const Duration(milliseconds: 140));
     }
 
     await stopSpeaking();
@@ -276,7 +281,9 @@ class VoiceService {
       // 1. Try Ultra-Realistic Studio Neural Voice if enabled
       if (SettingsService.instance.useNeuralVoice) {
         try {
-          final played = await EdgeTtsService.instance.speak(clean);
+          final played = await EdgeTtsService.instance
+              .speak(clean)
+              .timeout(const Duration(seconds: 7), onTimeout: () => false);
           if (played) {
             return;
           }
@@ -288,13 +295,20 @@ class VoiceService {
       // 2. Fall back to local FlutterTts (offline safe)
       await initTts();
       if (!_ttsReady) {
+        // One clean retry — engines occasionally fail on the first bind.
+        await initTts();
+      }
+      if (!_ttsReady) {
+        debugPrint('[VoiceService] TTS engine unavailable — staying silent.');
         return;
       }
+      await _tts.setVolume(1.0);
       try {
         _speakCompleter = Completer<void>();
         await _tts.speak(clean);
-        // Wait for audio synthesis and speaker playback to finish completely
-        await _speakCompleter?.future;
+        // Wait for playback, but never hang forever if the engine stalls.
+        await _speakCompleter?.future
+            .timeout(const Duration(seconds: 60), onTimeout: () {});
       } catch (_) {
       } finally {
         _speakCompleter = null;

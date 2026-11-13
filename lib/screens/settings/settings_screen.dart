@@ -1,15 +1,15 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../services/personality_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/telegram_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/glass_widgets.dart';
 import 'jarvis_settings_screen.dart';
 import 'permissions_screen.dart';
 
-/// Next-Generation Liquid Glass Settings Screen.
-/// Clean, executive grouped hierarchy with frosted glass translucency and modern controls.
+/// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 core configuration console.
+/// Same language as the HUD: cyan hairlines on black, serif type, cut corners.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -152,7 +152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         ),
       );
   }
@@ -176,120 +176,164 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         ),
       );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text(
-          'Settings',
-          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.3),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0x60090E17)
-                  : const Color(0x60F1F5F9),
+    return LiquidGlassScaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _header(context),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _sectionHeader(
+                    code: '01',
+                    title: 'AI Intelligence Engine',
+                    caption: 'Uplink · model · sampling',
+                  ),
+                  _aiProviderCard(),
+                  const SizedBox(height: 20),
+                  _sectionHeader(
+                    code: '02',
+                    title: 'J.A.R.V.I.S. Core',
+                    caption: 'Ears · voice · persona',
+                  ),
+                  _jarvisCard(),
+                  const SizedBox(height: 20),
+                  _sectionHeader(
+                    code: '03',
+                    title: 'Permissions & Inboxes',
+                    caption: 'Clearance matrix · telemetry',
+                  ),
+                  _permissionsCard(),
+                  const SizedBox(height: 20),
+                  _sectionHeader(
+                    code: '04',
+                    title: 'Automation Agent',
+                    caption: 'Execution limits · memory',
+                  ),
+                  _agentCard(),
+                  const SizedBox(height: 20),
+                  _sectionHeader(
+                    code: '05',
+                    title: 'Telegram Remote Bridge',
+                    caption: 'Off-site command relay',
+                  ),
+                  _telegramCard(),
+                  const SizedBox(height: 20),
+                  _sectionHeader(
+                    code: '06',
+                    title: 'Display Protocol',
+                    caption: 'HUD luminance',
+                  ),
+                  _appearanceCard(),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Text(
+                      'J.A.R.V.I.S. · BUILD 2.9 · LOCAL CONFIG',
+                      style: TextStyle(
+                        fontSize: 8,
+                        letterSpacing: 2.4,
+                        color: AppTheme.hudCyan.withValues(alpha: 0.28),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
-      body: Stack(
+    );
+  }
+
+  /// HUD title bar: back chevron, dossier title, live status lamp.
+  Widget _header(BuildContext context) {
+    final cyan = AppTheme.hudCyan;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 10, 16, 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: cyan.withValues(alpha: 0.18)),
+        ),
+      ),
+      child: Row(
         children: [
-          // Ambient background glow
-          Positioned(
-            top: 40,
-            right: -40,
-            child: Container(
-              width: 250,
-              height: 250,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF6366F1).withValues(alpha: 0.12),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
+          IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.chevron_left_rounded),
+            color: cyan,
+            tooltip: 'Back',
           ),
-          Positioned(
-            bottom: 100,
-            left: -50,
-            child: Container(
-              width: 280,
-              height: 280,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF00E5FF).withValues(alpha: 0.08),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _sectionHeader(
-                  icon: Icons.psychology_rounded,
-                  title: 'AI Intelligence Engine',
-                  color: const Color(0xFF818CF8),
+                Text(
+                  'J.A.R.V.I.S. · CORE CONFIGURATION',
+                  style: TextStyle(
+                    fontSize: 7.5,
+                    letterSpacing: 2.6,
+                    color: cyan.withValues(alpha: 0.55),
+                  ),
                 ),
-                _aiProviderCard(),
-                const SizedBox(height: 22),
-
-                _sectionHeader(
-                  icon: Icons.shield_rounded,
-                  title: 'Autonomous J.A.R.V.I.S. Core',
-                  color: const Color(0xFF00E5FF),
+                const SizedBox(height: 2),
+                Text(
+                  'SETTINGS',
+                  style: TextStyle(
+                    fontSize: 17,
+                    letterSpacing: 6,
+                    color: const Color(0xFFDFF9FF),
+                    shadows: [
+                      Shadow(
+                        color: cyan.withValues(alpha: 0.6),
+                        blurRadius: 16,
+                      ),
+                    ],
+                  ),
                 ),
-                _jarvisCard(),
-                const SizedBox(height: 22),
-
-                _sectionHeader(
-                  icon: Icons.security_rounded,
-                  title: 'Permissions & Telemetry Inboxes',
-                  color: const Color(0xFF38BDF8),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              border: Border.all(color: cyan.withValues(alpha: 0.35)),
+              color: cyan.withValues(alpha: 0.06),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.hudGreen,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.hudGreen.withValues(alpha: 0.9),
+                        blurRadius: 7,
+                      ),
+                    ],
+                  ),
                 ),
-                _permissionsCard(),
-                const SizedBox(height: 22),
-
-                _sectionHeader(
-                  icon: Icons.smart_toy_rounded,
-                  title: 'Device Automation Agent',
-                  color: const Color(0xFFA78BFA),
+                const SizedBox(width: 6),
+                Text(
+                  'SYS',
+                  style: TextStyle(
+                    fontSize: 8,
+                    letterSpacing: 1.8,
+                    color: cyan.withValues(alpha: 0.75),
+                  ),
                 ),
-                _agentCard(),
-                const SizedBox(height: 22),
-
-                _sectionHeader(
-                  icon: Icons.send_rounded,
-                  title: 'Telegram Remote Bridge',
-                  color: const Color(0xFF0EA5E9),
-                ),
-                _telegramCard(),
-                const SizedBox(height: 22),
-
-                _sectionHeader(
-                  icon: Icons.palette_outlined,
-                  title: 'Appearance & Visual Theme',
-                  color: const Color(0xFFF472B6),
-                ),
-                _appearanceCard(),
               ],
             ),
           ),
@@ -299,33 +343,121 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _sectionHeader({
-    required IconData icon,
+    required String code,
     required String title,
-    required Color color,
+    String? caption,
   }) {
+    final cyan = AppTheme.hudCyan;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
+      padding: const EdgeInsets.fromLTRB(2, 10, 2, 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(5),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: cyan.withValues(alpha: 0.45)),
+              color: cyan.withValues(alpha: 0.08),
             ),
-            child: Icon(icon, size: 15, color: color),
+            child: Text(
+              code,
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 1.2,
+                color: cyan,
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: color,
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2.2,
+                  color: cyan.withValues(alpha: 0.92),
+                ),
+              ),
+              if (caption != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    caption.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 7.5,
+                      letterSpacing: 1.8,
+                      color: cyan.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: cyan.withValues(alpha: 0.12),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// HUD primary action bar.
+  Widget _actionButton({
+    required String label,
+    required bool enabled,
+    required VoidCallback onTap,
+    IconData icon = Icons.save_outlined,
+  }) {
+    final cyan = AppTheme.hudCyan;
+    final active = enabled;
+    return GestureDetector(
+      onTap: active ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          color: active
+              ? cyan.withValues(alpha: 0.14)
+              : cyan.withValues(alpha: 0.03),
+          border: Border.all(
+            color: cyan.withValues(alpha: active ? 0.75 : 0.16),
+            width: active ? 1.2 : 1,
+          ),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: cyan.withValues(alpha: 0.22),
+                    blurRadius: 20,
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              active ? icon : Icons.check_rounded,
+              size: 15,
+              color: cyan.withValues(alpha: active ? 1 : 0.45),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label.toUpperCase(),
+              style: TextStyle(
+                fontSize: 10.5,
+                letterSpacing: 2.2,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                color: cyan.withValues(alpha: active ? 1 : 0.45),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -385,28 +517,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
           // Save button with liquid glass styling
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _aiDirty ? _saveAiSettings : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _aiDirty
-                    ? const Color(0xFF6366F1)
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: _aiDirty ? 4 : 0,
-              ),
-              icon: Icon(
-                _aiDirty ? Icons.save_rounded : Icons.check_circle_outline,
-                size: 18,
-              ),
-              label: Text(
-                _aiDirty ? 'Save changes' : 'Saved',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-              ),
-            ),
+          _actionButton(
+            label: _aiDirty ? 'Commit uplink settings' : 'Uplink synchronised',
+            enabled: _aiDirty,
+            onTap: _saveAiSettings,
           ),
           if (_aiDirty)
             const Padding(
@@ -463,9 +577,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return GlassCard(
       borderRadius: 22,
       padding: EdgeInsets.zero,
-      borderColor: const Color(0xFF00E5FF).withValues(alpha: 0.35),
+      borderColor: AppTheme.hudCyan.withValues(alpha: 0.35),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.zero,
         onTap: () {
           Navigator.of(context)
               .push(
@@ -486,19 +600,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     decoration: BoxDecoration(
                       gradient: RadialGradient(
                         colors: [
-                          const Color(0xFF00E5FF).withValues(alpha: 0.35),
-                          const Color(0xFF00E5FF).withValues(alpha: 0.08),
+                          AppTheme.hudCyan.withValues(alpha: 0.35),
+                          AppTheme.hudCyan.withValues(alpha: 0.08),
                         ],
                       ),
-                      shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFF00E5FF).withValues(alpha: 0.7),
-                        width: 1.5,
+                        color: AppTheme.hudCyan.withValues(alpha: 0.7),
+                        width: 1.2,
                       ),
                     ),
                     child: const Icon(
                       Icons.shield_outlined,
-                      color: Color(0xFF00E5FF),
+                      color: AppTheme.hudCyan,
                       size: 24,
                     ),
                   ),
@@ -514,8 +627,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               style: TextStyle(
                                 fontSize: 16.5,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 1.4,
-                                fontFamily: 'monospace',
+                                letterSpacing: 2.4,
+                                fontFamily: AppTheme.serif,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -526,12 +639,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                               decoration: BoxDecoration(
                                 color: isAlwaysOn
-                                    ? const Color(0xFF00E5FF).withValues(alpha: 0.18)
+                                    ? AppTheme.hudCyan.withValues(alpha: 0.18)
                                     : theme.colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.zero,
                                 border: Border.all(
                                   color: isAlwaysOn
-                                      ? const Color(0xFF00E5FF).withValues(alpha: 0.6)
+                                      ? AppTheme.hudCyan.withValues(alpha: 0.6)
                                       : theme.colorScheme.outline.withValues(alpha: 0.3),
                                   width: 0.8,
                                 ),
@@ -543,7 +656,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.8,
                                   color: isAlwaysOn
-                                      ? const Color(0xFF00E5FF)
+                                      ? AppTheme.hudCyan
                                       : theme.colorScheme.onSurfaceVariant,
                                 ),
                               ),
@@ -565,7 +678,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Icon(
                     Icons.arrow_forward_ios_rounded,
                     size: 16,
-                    color: Color(0xFF00E5FF),
+                    color: AppTheme.hudCyan,
                   ),
                 ],
               ),
@@ -575,19 +688,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 runSpacing: 6,
                 children: [
                   GlassPill(
-                    icon: const Icon(Icons.mic_rounded, size: 13, color: Color(0xFF00E5FF)),
+                    icon: const Icon(Icons.mic_rounded, size: 13, color: AppTheme.hudCyan),
                     label: isAlwaysOn ? 'Hands-Free Receptors' : 'Tap to Talk',
-                    color: const Color(0xFF00E5FF),
+                    color: AppTheme.hudCyan,
                   ),
                   GlassPill(
-                    icon: const Icon(Icons.record_voice_over_rounded, size: 13, color: Color(0xFFFFD700)),
+                    icon: const Icon(Icons.record_voice_over_rounded, size: 13, color: AppTheme.hudAmber),
                     label: '$voice Studio Voice',
-                    color: const Color(0xFFFFD700),
+                    color: AppTheme.hudAmber,
                   ),
                   GlassPill(
-                    icon: const Icon(Icons.psychology_outlined, size: 13, color: Color(0xFFBA68C8)),
+                    icon: const Icon(Icons.psychology_outlined, size: 13, color: AppTheme.hudGreen),
                     label: '$persona Tone',
-                    color: const Color(0xFFBA68C8),
+                    color: AppTheme.hudGreen,
                   ),
                 ],
               ),
@@ -603,7 +716,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       borderRadius: 22,
       padding: EdgeInsets.zero,
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.zero,
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const PermissionsScreen()),
@@ -620,15 +733,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
+                      color: AppTheme.hudCyan.withValues(alpha: 0.15),
                       border: Border.all(
-                        color: const Color(0xFF38BDF8).withValues(alpha: 0.4),
+                        color: AppTheme.hudCyan.withValues(alpha: 0.4),
                       ),
                     ),
                     child: const Icon(
                       Icons.lock_open_rounded,
-                      color: Color(0xFF38BDF8),
+                      color: AppTheme.hudCyan,
                       size: 22,
                     ),
                   ),
@@ -679,14 +791,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: Colors.amber,
                   ),
                   GlassPill(
-                    icon: Icon(Icons.mic_rounded, size: 13, color: Color(0xFF00E5FF)),
+                    icon: Icon(Icons.mic_rounded, size: 13, color: AppTheme.hudCyan),
                     label: 'Mic Receptor',
-                    color: Color(0xFF00E5FF),
+                    color: AppTheme.hudCyan,
                   ),
                   GlassPill(
-                    icon: Icon(Icons.accessibility_new_rounded, size: 13, color: Color(0xFF818CF8)),
+                    icon: Icon(Icons.accessibility_new_rounded, size: 13, color: AppTheme.hudCyan),
                     label: 'Screen Touch',
-                    color: Color(0xFF818CF8),
+                    color: AppTheme.hudCyan,
                   ),
                 ],
               ),
@@ -787,28 +899,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             prefixIcon: const Icon(Icons.group_outlined, size: 20),
           ),
           const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _telegramDirty ? _saveTelegramSettings : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _telegramDirty
-                    ? const Color(0xFF0EA5E9)
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: _telegramDirty ? 4 : 0,
-              ),
-              icon: Icon(
-                _telegramDirty ? Icons.save_rounded : Icons.check_circle_outline,
-                size: 18,
-              ),
-              label: Text(
-                _telegramDirty ? 'Save Telegram settings' : 'Telegram saved',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-              ),
-            ),
+          _actionButton(
+            label: _telegramDirty ? 'Commit bridge settings' : 'Bridge synchronised',
+            enabled: _telegramDirty,
+            onTap: _saveTelegramSettings,
+            icon: Icons.send_outlined,
           ),
           const SizedBox(height: 14),
           if (owner.isNotEmpty)
@@ -816,7 +911,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.greenAccent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.zero,
                 border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.35)),
               ),
               child: Row(
@@ -847,9 +942,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   TextButton.icon(
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      backgroundColor: Colors.redAccent.withValues(alpha: 0.12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      foregroundColor: AppTheme.danger,
+                      backgroundColor: AppTheme.danger.withValues(alpha: 0.10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.zero,
+                        side: BorderSide(
+                          color: AppTheme.danger.withValues(alpha: 0.45),
+                        ),
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     ),
                     icon: const Icon(Icons.link_off_rounded, size: 15),
@@ -863,7 +963,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           content: const Text('Telegram owner pairing unlinked'),
                           duration: const Duration(seconds: 2),
                           behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
                         ),
                       );
                     },
@@ -876,7 +976,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.amberAccent.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.zero,
                 border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.25)),
               ),
               child: Row(
@@ -972,13 +1072,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
-              ? theme.colorScheme.primary.withValues(alpha: 0.20)
-              : Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(16),
+              ? AppTheme.hudCyan.withValues(alpha: 0.16)
+              : AppTheme.hudCyan.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.zero,
           border: Border.all(
             color: isSelected
-                ? theme.colorScheme.primary.withValues(alpha: 0.6)
-                : Colors.white.withValues(alpha: 0.10),
+                ? AppTheme.hudCyan.withValues(alpha: 0.7)
+                : AppTheme.hudCyan.withValues(alpha: 0.15),
             width: isSelected ? 1.4 : 1.0,
           ),
         ),
