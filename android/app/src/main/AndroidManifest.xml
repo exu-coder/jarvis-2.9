@@ -196,7 +196,12 @@
         <!-- ========== Floating bubble overlay (HTML orb + copilot panel) ========== -->
         <service
             android:name=".BubbleOverlayService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 floating bubble orb and copilot panel visible above other apps while the assistant is active." />
+        </service>
 
         <!-- ========== Accessibility service: reads screen hierarchy and
              performs gestures (tap, swipe, scroll, type) on behalf of the user. ========== -->
