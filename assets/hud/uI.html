@@ -922,6 +922,16 @@
     </svg>
   </button>
 
+  <button class="btn aux" id="bubble" aria-label="Floating co-pilot bubble" title="Floating bubble">
+    <svg viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="6.3"/>
+      <path d="M12 8.7v3.2l2.2 1.6"/>
+      <path d="M4.6 5.1a9.4 9.4 0 0 0 0 13.8M19.4 5.1a9.4 9.4 0 0 1 0 13.8"/>
+    </svg>
+  </button>
+
   <button class="btn voice" id="voice" aria-label="Toggle microphone" aria-pressed="false">
     <svg class="icon-mic" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" stroke-width="1.7"
@@ -1086,6 +1096,15 @@
     async function startMic() {
       if (live) return true;
 
+      // Native engine (Flutter WebView / Android host): the HUD asks the
+      // platform SpeechRecognizer to listen, keeping the WebView silent.
+      if (window.JARVIS_NATIVE && typeof window.JARVIS_NATIVE.postMessage === 'function') {
+        window.JARVIS_NATIVE.postMessage('jv:listen');
+        live = true;
+        setListening(true);
+        return true;
+      }
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showToast('MIC REQUIRES HTTPS · SIMULATION MODE');
         setListening(false, true);
@@ -1125,6 +1144,9 @@
       live = false;
       analyser = null;
       freq = null;
+      if (window.JARVIS_NATIVE && typeof window.JARVIS_NATIVE.postMessage === 'function') {
+        window.JARVIS_NATIVE.postMessage('jv:stopListen');
+      }
       if (micStream) {
         micStream.getTracks().forEach(t => t.stop());
         micStream = null;
@@ -1316,6 +1338,9 @@
       toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
     }
 
+    /* Expose the HUD toast to the native host bridge. */
+    window.hudToast = showToast;
+
     /* ---------- wake lock ---------- */
     let wakeLock = null;
     async function requestWakeLock() {
@@ -1427,6 +1452,31 @@
     window.onJarvisError = function (message) {
       removeTyping();
       appendMessage('jarvis', 'Bridge error: ' + String(message || 'unknown'));
+    };
+
+    /* Native speech-to-text: live transcript from the Android recognizer. */
+    window.onJarvisTranscript = function (text, isFinal) {
+      var value = String(text == null ? '' : text).trim();
+      if (!value) return;
+      statusEl.textContent = value;
+      if (isFinal) {
+        appendMessage('user', value);
+        showTyping();
+      }
+    };
+
+    /* Native listening state (mic armed / released / failed). */
+    window.onJarvisVoiceStatus = function (state) {
+      var s = String(state || '');
+      if (s === 'listening') {
+        micMuted = false;
+        renderVoiceState();
+        setListening(true);
+      } else if (s === 'notListening' || s === 'error') {
+        micMuted = true;
+        renderVoiceState();
+        setListening(false, true);
+      }
     };
 
     function generateReply(input) {
@@ -1548,6 +1598,13 @@
     if (settingsBtn) {
       settingsBtn.addEventListener('click', () => {
         if (!hostCommand('settings')) showToast('NATIVE LINK OFFLINE');
+      });
+    }
+
+    const bubbleBtn = document.getElementById('bubble');
+    if (bubbleBtn) {
+      bubbleBtn.addEventListener('click', () => {
+        if (!hostCommand('bubble')) showToast('NATIVE LINK OFFLINE');
       });
     }
 

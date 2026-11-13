@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#01060c">
+  <title>J.A.R.V.I.S. · initialisation</title>
+  <style>
+    :root {
+      --cy: #42e8ff;
+      --cy-dim: rgba(66, 232, 255, .35);
+      --cy-faint: rgba(66, 232, 255, .12);
+      --amber: #ffb74a;
+      --ok: #5affa8;
+      --bg: #01060c;
+      --panel: rgba(1, 12, 22, .82);
+      --font-serif: "Times New Roman", Times, Baskerville, Georgia, serif;
+      --dock-h: 86px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      overscroll-behavior: none;
+    }
+
+    body {
+      font-family: var(--font-serif);
+      color: var(--cy);
+      letter-spacing: .03em;
+      -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none;
+      user-select: none;
+      position: fixed;
+      inset: 0;
+    }
+
+    #bg-fallback {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 14%, rgba(20, 90, 130, .45), transparent 70%),
+        radial-gradient(ellipse 120% 80% at 50% 120%, rgba(10, 60, 95, .45), transparent 65%);
+      animation: slowspin 140s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes slowspin { to { transform: rotate(360deg) scale(1.16); } }
+
+    #grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(var(--cy-faint) 1px, transparent 1px),
+        linear-gradient(90deg, var(--cy-faint) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: .18;
+      mask-image: radial-gradient(ellipse 72% 68% at 50% 40%, #000 12%, transparent 80%);
+      -webkit-mask-image: radial-gradient(ellipse 72% 68% at 50% 40%, #000 12%, transparent 80%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #vignette {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 82% 72% at 50% 40%, transparent 32%, rgba(1, 6, 12, .8) 82%, #01060c 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #scanlines {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, .2) 0 1px, transparent 1px 3px);
+      mix-blend-mode: multiply;
+      opacity: .38;
+      z-index: 40;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding:
+        calc(env(safe-area-inset-top, 0px) + 16px)
+        calc(env(safe-area-inset-right, 0px) + 18px)
+        calc(env(safe-area-inset-bottom, 0px) + var(--dock-h) + 12px)
+        calc(env(safe-area-inset-left, 0px) + 18px);
+      z-index: 5;
+    }
+
+    .corner {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border: 1px solid rgba(66, 232, 255, .32);
+      pointer-events: none;
+      z-index: 8;
+    }
+
+    .corner.tl { top: calc(env(safe-area-inset-top, 0px) + 5px); left: calc(env(safe-area-inset-left, 0px) + 5px); border-right: 0; border-bottom: 0; }
+    .corner.tr { top: calc(env(safe-area-inset-top, 0px) + 5px); right: calc(env(safe-area-inset-right, 0px) + 5px); border-left: 0; border-bottom: 0; }
+    .corner.bl { bottom: calc(env(safe-area-inset-bottom, 0px) + 5px); left: calc(env(safe-area-inset-left, 0px) + 5px); border-right: 0; border-top: 0; }
+    .corner.br { bottom: calc(env(safe-area-inset-bottom, 0px) + 5px); right: calc(env(safe-area-inset-right, 0px) + 5px); border-left: 0; border-top: 0; }
+
+    /* ---------- header ---------- */
+    #head {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(66, 232, 255, .18);
+    }
+
+    .kicker {
+      font-size: clamp(7px, 1.9vw, 9.5px);
+      letter-spacing: .34em;
+      text-transform: uppercase;
+      color: rgba(66, 232, 255, .55);
+      margin-bottom: 4px;
+    }
+
+    #head .title {
+      font-size: clamp(16px, 4.9vw, 25px);
+      letter-spacing: .16em;
+      color: #dff9ff;
+      text-shadow: 0 0 18px rgba(66, 232, 255, .55);
+      line-height: 1.05;
+    }
+
+    #head .meta {
+      margin-top: 5px;
+      font-size: clamp(7px, 1.9vw, 9.5px);
+      letter-spacing: .18em;
+      color: rgba(66, 232, 255, .5);
+    }
+
+    #step {
+      text-align: right;
+      font-size: clamp(7px, 1.9vw, 9.5px);
+      letter-spacing: .24em;
+      color: rgba(66, 232, 255, .55);
+      white-space: nowrap;
+    }
+
+    #step b { color: #dff9ff; font-weight: 400; }
+
+    /* ---------- progress ---------- */
+    #progress {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 6px;
+      margin: 12px 0 4px;
+    }
+
+    #progress .seg {
+      flex: 1;
+      height: 2px;
+      background: rgba(66, 232, 255, .16);
+      transition: background .35s ease, box-shadow .35s ease;
+    }
+
+    #progress .seg.on {
+      background: var(--cy);
+      box-shadow: 0 0 10px rgba(66, 232, 255, .7);
+    }
+
+    #progress .seg.done { background: rgba(66, 232, 255, .55); }
+
+    /* ---------- slides ---------- */
+    #slides {
+      flex: 1 1 auto;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px 2px 8px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(14px);
+      transition: opacity .35s ease, transform .35s ease, visibility .35s;
+    }
+
+    .slide.active { opacity: 1; visibility: visible; transform: none; }
+
+    .slide::-webkit-scrollbar { width: 0; }
+
+    .lede {
+      font-size: clamp(10.5px, 2.9vw, 13px);
+      line-height: 1.6;
+      color: rgba(190, 235, 248, .72);
+      letter-spacing: .02em;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      background: var(--panel);
+      border: 1px solid rgba(66, 232, 255, .18);
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+      font-size: clamp(9px, 2.4vw, 11px);
+      letter-spacing: .06em;
+      color: #cdf6ff;
+    }
+
+    .stat .lamp {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 10px var(--amber);
+      flex: 0 0 auto;
+    }
+
+    .stat.on { border-color: rgba(90, 255, 168, .32); }
+    .stat.on .lamp { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+
+    .stat .tag {
+      margin-left: auto;
+      font-size: 8px;
+      letter-spacing: .2em;
+      color: var(--amber);
+    }
+
+    .stat.on .tag { color: var(--ok); }
+
+    .feature {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 11px;
+      align-items: start;
+      padding: 10px 2px;
+      border-bottom: 1px solid rgba(66, 232, 255, .1);
+    }
+
+    .feature:last-child { border-bottom: 0; }
+
+    .feature .glyph {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 30px;
+      border: 1px solid rgba(66, 232, 255, .28);
+      color: rgba(66, 232, 255, .85);
+      font-size: 9px;
+      letter-spacing: .06em;
+      background: rgba(66, 232, 255, .05);
+    }
+
+    .feature h3 {
+      font-size: clamp(11px, 3vw, 13px);
+      font-weight: 400;
+      letter-spacing: .06em;
+      color: #dcf8ff;
+    }
+
+    .feature p {
+      margin-top: 2px;
+      font-size: clamp(8.5px, 2.3vw, 10.5px);
+      line-height: 1.45;
+      color: rgba(149, 213, 232, .6);
+    }
+
+    .label {
+      font-size: clamp(7.5px, 2vw, 9.5px);
+      letter-spacing: .28em;
+      text-transform: uppercase;
+      color: rgba(66, 232, 255, .62);
+      margin: 14px 2px 8px;
+    }
+
+    /* provider chips */
+    #providers {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      font-family: var(--font-serif);
+      font-size: clamp(9px, 2.4vw, 11px);
+      letter-spacing: .1em;
+      color: rgba(205, 246, 255, .8);
+      background: rgba(6, 20, 33, .9);
+      border: 1px solid rgba(66, 232, 255, .24);
+      padding: 8px 12px;
+      cursor: pointer;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+      transition: border-color .2s ease, background .2s ease, color .2s ease;
+    }
+
+    .chip.active {
+      border-color: rgba(66, 232, 255, .8);
+      background: rgba(66, 232, 255, .12);
+      color: #eafdff;
+      box-shadow: 0 0 16px rgba(66, 232, 255, .22);
+    }
+
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      margin-top: 12px;
+      padding: 12px 12px;
+      font-family: var(--font-serif);
+      font-size: clamp(11px, 2.9vw, 13px);
+      letter-spacing: .08em;
+      color: #eafdff;
+      background: rgba(1, 12, 22, .92);
+      border: 1px solid rgba(66, 232, 255, .25);
+      outline: none;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    input:focus { border-color: rgba(66, 232, 255, .75); box-shadow: 0 0 16px rgba(66, 232, 255, .18); }
+
+    .hint {
+      margin-top: 8px;
+      font-size: clamp(8px, 2.1vw, 10px);
+      line-height: 1.5;
+      color: rgba(133, 200, 220, .55);
+      letter-spacing: .02em;
+    }
+
+    /* clearance rows */
+    .clear {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+      margin-bottom: 8px;
+      background: var(--panel);
+      border: 1px solid rgba(66, 232, 255, .16);
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    }
+
+    .clear h3 {
+      font-size: clamp(10.5px, 2.8vw, 12.5px);
+      font-weight: 400;
+      letter-spacing: .05em;
+      color: #dcf8ff;
+    }
+
+    .clear p {
+      margin-top: 2px;
+      font-size: clamp(8px, 2.2vw, 10px);
+      color: rgba(149, 213, 232, .6);
+    }
+
+    .mini {
+      font-family: var(--font-serif);
+      font-size: clamp(8px, 2.1vw, 9.5px);
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: #cdf6ff;
+      background: linear-gradient(145deg, rgba(27, 56, 88, .9), rgba(11, 23, 40, .9));
+      border: 1px solid rgba(84, 143, 196, .5);
+      padding: 8px 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color .2s ease, box-shadow .2s ease, transform .15s ease;
+    }
+
+    .mini:hover { border-color: rgba(128, 201, 255, .9); box-shadow: 0 0 16px rgba(57, 158, 255, .3); }
+    .mini:active { transform: scale(.95); }
+
+    .link {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 11px;
+      font-family: var(--font-serif);
+      font-size: clamp(9px, 2.4vw, 10.5px);
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: rgba(205, 246, 255, .82);
+      background: transparent;
+      border: 1px dashed rgba(66, 232, 255, .28);
+      cursor: pointer;
+    }
+
+    .link:hover { border-color: rgba(66, 232, 255, .7); color: #eafdff; }
+
+    /* ---------- dock ---------- */
+    #dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      display: flex;
+      gap: 8px;
+      padding:
+        10px
+        calc(env(safe-area-inset-right, 0px) + 18px)
+        calc(env(safe-area-inset-bottom, 0px) + 12px)
+        calc(env(safe-area-inset-left, 0px) + 18px);
+      background: linear-gradient(to top, rgba(1, 6, 12, .99) 45%, rgba(1, 6, 12, .84) 80%, transparent);
+      border-top: 1px solid rgba(66, 232, 255, .18);
+    }
+
+    .dock-btn {
+      font-family: var(--font-serif);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: box-shadow .25s ease, border-color .25s ease, transform .18s ease;
+    }
+
+    .dock-btn:active { transform: scale(.97); }
+
+    #next {
+      flex: 1 1 auto;
+      font-size: clamp(9.5px, 2.6vw, 11px);
+      font-weight: 700;
+      color: #01121a;
+      background: linear-gradient(145deg, #6ff0ff, #2ec7e6);
+      border: 1px solid rgba(160, 250, 255, .8);
+      padding: 13px 16px;
+      box-shadow: 0 0 22px rgba(66, 232, 255, .3), inset 0 0 14px rgba(255, 255, 255, .32);
+    }
+
+    #next:hover { box-shadow: 0 0 30px rgba(66, 232, 255, .5); }
+
+    #back {
+      flex: 0 0 auto;
+      font-size: clamp(8.5px, 2.2vw, 10px);
+      color: rgba(205, 246, 255, .85);
+      background: rgba(6, 20, 33, .9);
+      border: 1px solid rgba(66, 232, 255, .26);
+      padding: 13px 14px;
+    }
+
+    #back[disabled] { opacity: .3; pointer-events: none; }
+
+    /* ---------- toast ---------- */
+    #toast {
+      position: absolute;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + var(--dock-h) + 16px);
+      transform: translateX(-50%) translateY(10px);
+      background: rgba(1, 10, 18, .94);
+      border: 1px solid rgba(66, 232, 255, .4);
+      color: #bff4ff;
+      padding: 8px 15px;
+      font-size: clamp(8px, 2.2vw, 10px);
+      letter-spacing: .1em;
+      z-index: 45;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s ease, transform .3s ease;
+      max-width: 88vw;
+      text-align: center;
+    }
+
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-height: 560px) {
+      .feature { padding: 7px 2px; }
+      .lede { margin-bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="bg-fallback"></div>
+  <div id="grid"></div>
+  <div id="vignette"></div>
+  <div id="scanlines"></div>
+
+  <div id="stage">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <header id="head">
+      <div>
+        <div class="kicker">J.A.R.V.I.S. · initialisation</div>
+        <div class="title">SYSTEM SETUP</div>
+        <div class="meta">FIRST BOOT SEQUENCE</div>
+      </div>
+      <div id="step">STEP <b id="stepNum">01</b> / 04</div>
+    </header>
+
+    <div id="progress">
+      <div class="seg on"></div>
+      <div class="seg"></div>
+      <div class="seg"></div>
+      <div class="seg"></div>
+    </div>
+
+    <div id="slides">
+      <!-- 1 · welcome -->
+      <section class="slide active" data-step="0">
+        <p class="lede">
+          I am J.A.R.V.I.S. — your autonomous phone co-pilot. Voice-first
+          intelligence, screen automation, and live device control, all running
+          from this handset.
+        </p>
+        <div class="feature">
+          <div class="glyph">VOX</div>
+          <div>
+            <h3>Hands-free voice intelligence</h3>
+            <p>Speak naturally for commands, briefings and device actions.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="glyph">HUD</div>
+          <div>
+            <h3>Arc reactor interface</h3>
+            <p>Live waveform, arc core and a floating co-pilot bubble over any app.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="glyph">CTL</div>
+          <div>
+            <h3>Full device automation</h3>
+            <p>Taps, typing, calls, messages, alarms, files and system settings.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="glyph">SEC</div>
+          <div>
+            <h3>Sentry &amp; Code Black</h3>
+            <p>Anti-theft watchdog, network audit and emergency lockout protocols.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 · screen control -->
+      <section class="slide" data-step="1">
+        <p class="lede">
+          Screen control runs through an Android accessibility service. It is what
+          lets me read the display and act on your behalf.
+        </p>
+        <div class="stat" id="a11yStat">
+          <span class="lamp"></span>
+          <span id="a11yText">SCREEN CONTROL · OFF</span>
+          <span class="tag" id="a11yTag">OFF</span>
+        </div>
+        <button class="link" id="openA11y">OPEN ACCESSIBILITY SETTINGS</button>
+        <button class="link" id="openAppInfo">APP INFO · ALLOW RESTRICTED SETTINGS</button>
+        <p class="hint">
+          Android 13 and newer: open App Info → ⋮ → “Allow restricted settings”,
+          then enable “JARVIS Screen Control” under Accessibility → Downloaded apps.
+        </p>
+        <button class="link" id="recheck">RE-CHECK STATUS</button>
+      </section>
+
+      <!-- 3 · AI brain -->
+      <section class="slide" data-step="2">
+        <p class="lede">
+          Connect an OpenAI-compatible brain. The key is stored only on this
+          device and can be changed later from Core Settings.
+        </p>
+        <div class="label">Provider</div>
+        <div id="providers"></div>
+        <div class="label">Access key</div>
+        <input id="apiKey" type="password" placeholder="sk-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="hint" id="modelHint">Model · —</p>
+        <p class="hint" id="ollamaHint" style="display:none">
+          Ollama runs locally: OLLAMA_HOST=0.0.0.0 ollama serve, then
+          adb reverse tcp:11434 tcp:11434 so the handset can reach it.
+        </p>
+      </section>
+
+      <!-- 4 · clearances -->
+      <section class="slide" data-step="3">
+        <p class="lede">
+          Optional clearances. Each one unlocks a capability — skip anything you
+          do not need, nothing is mandatory.
+        </p>
+        <div class="clear">
+          <div>
+            <h3>Microphone</h3>
+            <p>Speak commands and wake-word listening</p>
+          </div>
+          <button class="mini" data-perm="microphone">Grant</button>
+        </div>
+        <div class="clear">
+          <div>
+            <h3>Notifications</h3>
+            <p>Task progress and completion alerts</p>
+          </div>
+          <button class="mini" data-perm="notifications">Grant</button>
+        </div>
+        <div class="clear">
+          <div>
+            <h3>Contacts</h3>
+            <p>“Call Mom”-style commands</p>
+          </div>
+          <button class="mini" data-perm="contacts">Grant</button>
+        </div>
+        <div class="clear">
+          <div>
+            <h3>Floating bubble</h3>
+            <p>Co-pilot over other applications</p>
+          </div>
+          <button class="mini" data-perm="overlay">Grant</button>
+        </div>
+        <p class="hint">
+          Every clearance can be revoked at any time from the Authority Matrix on
+          the HUD.
+        </p>
+      </section>
+    </div>
+  </div>
+
+  <footer id="dock">
+    <button id="back" class="dock-btn" disabled>Back</button>
+    <button id="next" class="dock-btn">Continue</button>
+  </footer>
+
+  <div id="toast"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var slides   = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+      var segs     = Array.prototype.slice.call(document.querySelectorAll('#progress .seg'));
+      var stepNum  = document.getElementById('stepNum');
+      var nextBtn  = document.getElementById('next');
+      var backBtn  = document.getElementById('back');
+      var toastEl  = document.getElementById('toast');
+      var apiKey   = document.getElementById('apiKey');
+      var modelHint= document.getElementById('modelHint');
+      var ollamaHint = document.getElementById('ollamaHint');
+      var a11yStat = document.getElementById('a11yStat');
+      var a11yText = document.getElementById('a11yText');
+      var a11yTag  = document.getElementById('a11yTag');
+
+      var step = 0;
+      var state = { providers: [], provider: '', model: '', accessibility: false };
+      var toastTimer = null;
+
+      function send(payload) {
+        var msg = JSON.stringify(payload);
+        if (window.JARVIS_BOOT && typeof window.JARVIS_BOOT.postMessage === 'function') {
+          window.JARVIS_BOOT.postMessage(msg);
+          return true;
+        }
+        return false;
+      }
+
+      function toast(text) {
+        toastEl.textContent = text;
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+      }
+      window.bootToast = toast;
+
+      function renderStep() {
+        slides.forEach(function (s, i) { s.classList.toggle('active', i === step); });
+        segs.forEach(function (s, i) {
+          s.classList.toggle('on', i === step);
+          s.classList.toggle('done', i < step);
+        });
+        stepNum.textContent = ('0' + (step + 1)).slice(-2);
+        backBtn.disabled = step === 0;
+        nextBtn.textContent = step === 3 ? 'Enter HUD' : 'Continue';
+      }
+
+      function renderProviders() {
+        var box = document.getElementById('providers');
+        box.innerHTML = '';
+        (state.providers || []).forEach(function (p) {
+          var b = document.createElement('button');
+          b.className = 'chip' + (p.id === state.provider ? ' active' : '');
+          b.textContent = p.label;
+          b.addEventListener('click', function () {
+            state.provider = p.id;
+            send({ action: 'provider', id: p.id });
+            renderProviders();
+            toast('PROVIDER · ' + p.label.toUpperCase());
+          });
+          box.appendChild(b);
+        });
+        ollamaHint.style.display = state.provider === 'ollama' ? 'block' : 'none';
+        modelHint.textContent = 'Model · ' + (state.model || '—');
+      }
+
+      function renderA11y() {
+        var on = !!state.accessibility;
+        a11yStat.classList.toggle('on', on);
+        a11yText.textContent = 'SCREEN CONTROL · ' + (on ? 'ENABLED' : 'OFF');
+        a11yTag.textContent = on ? 'ON' : 'OFF';
+      }
+
+      /* ---------- host pushes ---------- */
+      window.bootState = function (payload) {
+        var data;
+        try {
+          data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        } catch (e) { return; }
+        state = {
+          providers: data.providers || [],
+          provider: data.provider || '',
+          model: data.model || '',
+          accessibility: !!data.accessibility
+        };
+        if (data.apiKey) apiKey.value = data.apiKey;
+        renderProviders();
+        renderA11y();
+      };
+
+      window.bootA11y = function (enabled) {
+        state.accessibility = !!enabled;
+        renderA11y();
+      };
+
+      /* ---------- navigation ---------- */
+      function go(delta) {
+        var target = step + delta;
+        if (target < 0 || target > 3) return;
+        step = target;
+        renderStep();
+      }
+
+      nextBtn.addEventListener('click', function () {
+        if (step < 3) { go(1); return; }
+        if (!send({ action: 'complete' })) toast('NATIVE LINK OFFLINE');
+      });
+
+      backBtn.addEventListener('click', function () { go(-1); });
+
+      /* ---------- slide 2 actions ---------- */
+      document.getElementById('openA11y').addEventListener('click', function () {
+        if (!send({ action: 'accessibility' })) toast('NATIVE LINK OFFLINE');
+      });
+      document.getElementById('openAppInfo').addEventListener('click', function () {
+        if (!send({ action: 'appInfo' })) toast('NATIVE LINK OFFLINE');
+      });
+      document.getElementById('recheck').addEventListener('click', function () {
+        send({ action: 'refresh' });
+      });
+
+      /* ---------- slide 3 actions ---------- */
+      apiKey.addEventListener('input', function () {
+        send({ action: 'apiKey', value: apiKey.value });
+      });
+
+      /* ---------- slide 4 actions ---------- */
+      Array.prototype.forEach.call(document.querySelectorAll('.mini'), function (b) {
+        b.addEventListener('click', function () {
+          var perm = b.getAttribute('data-perm');
+          if (!send({ action: 'permission', kind: perm })) {
+            toast('NATIVE LINK OFFLINE');
+            return;
+          }
+          b.textContent = 'Requested';
+          b.disabled = true;
+          setTimeout(function () { b.disabled = false; b.textContent = 'Grant'; }, 1800);
+        });
+      });
+
+      renderStep();
+
+      /* Ask for the first snapshot; browser preview falls back to demo data. */
+      if (!send({ action: 'ready' })) {
+        window.bootState({
+          providers: [
+            { id: 'deepseek', label: 'DeepSeek' },
+            { id: 'openai', label: 'OpenAI' },
+            { id: 'groq', label: 'Groq' },
+            { id: 'ollama', label: 'Ollama' }
+          ],
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          accessibility: false
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

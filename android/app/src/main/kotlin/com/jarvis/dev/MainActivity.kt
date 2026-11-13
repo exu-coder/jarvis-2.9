@@ -101,6 +101,53 @@ class MainActivity : FlutterActivity() {
     // Background Media / Music protection (avoids audio-focus theft that pauses YouTube / music players)
     private var mediaSuppressionUntil: Long = 0L
 
+    // ---------------------------------------------------------------------
+    // Silent microphone: the Google recognizer chimes on every (re)start.
+    // We mute the media system streams for a very short window around
+    // startListening(), then restore the user's exact volumes.
+    // ---------------------------------------------------------------------
+    private var tonesMuted = false
+    private var savedMusicVolume = -1
+    private var savedSystemVolume = -1
+
+    private val restoreTonesRunnable = Runnable {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (am != null) {
+                if (savedMusicVolume >= 0) {
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, savedMusicVolume, 0)
+                }
+                if (savedSystemVolume >= 0) {
+                    am.setStreamVolume(AudioManager.STREAM_SYSTEM, savedSystemVolume, 0)
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            tonesMuted = false
+            savedMusicVolume = -1
+            savedSystemVolume = -1
+        }
+    }
+
+    private fun muteRecognitionTones(durationMs: Long = 400L) {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (!tonesMuted) {
+                savedMusicVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                savedSystemVolume = am.getStreamVolume(AudioManager.STREAM_SYSTEM)
+            }
+            // Never cut audio the user is actively listening to.
+            if (!am.isMusicActive) {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+            }
+            am.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, 0)
+            tonesMuted = true
+            mainHandler.removeCallbacks(restoreTonesRunnable)
+            mainHandler.postDelayed(restoreTonesRunnable, durationMs)
+        } catch (_: Exception) {
+        }
+    }
+
     private fun isMediaPlaybackActive(): Boolean {
         return try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -524,6 +571,7 @@ class MainActivity : FlutterActivity() {
             }
             speechRecognizer = recognizer
             val intent = recognitionIntent ?: buildRecognitionIntent()
+            muteRecognitionTones(400L)
             recognizer.startListening(intent)
             android.util.Log.i("JARVIS_VOICE", "restartRunnable: recognizer restarted cleanly")
         } catch (e: Exception) {
@@ -698,6 +746,7 @@ class MainActivity : FlutterActivity() {
                 speechRecognizer = recognizer
                 val intent = buildRecognitionIntent()
                 recognitionIntent = intent
+                muteRecognitionTones(400L)
                 recognizer.startListening(intent)
                 speechChannel?.invokeMethod("onSpeechStatus", "listening")
             } catch (e: Exception) {
@@ -714,6 +763,7 @@ class MainActivity : FlutterActivity() {
         mainHandler.removeCallbacks(restartRunnable)
         isRestartPending = false
         mainHandler.post {
+            muteRecognitionTones(200L)
             safeCancelAndDestroy()
             speechChannel?.invokeMethod("onSpeechStatus", "notListening")
         }
