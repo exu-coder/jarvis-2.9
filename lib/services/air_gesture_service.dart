@@ -73,11 +73,15 @@ class AirGestureService extends ChangeNotifier {
         ));
       }
       return _isEnabled;
-    } catch (_) {
-      _isEnabled = true; // allow software simulation
-      _statusMessage = 'Air Gestures active in software mode.';
+    } catch (e) {
+      // M4/U1: a dead sensor is NOT "enabled". Reporting software mode here
+      // made the HUD claim gestures were live while nothing was armed, and the
+      // "software simulation" path is what toggled media in a pocket.
+      debugPrint('[AirGestureService] startAirGestures failed: $e');
+      _isEnabled = false;
+      _statusMessage = 'Proximity sensor unavailable — air gestures inactive.';
       notifyListeners();
-      return true;
+      return false;
     }
   }
 
@@ -85,7 +89,13 @@ class AirGestureService extends ChangeNotifier {
   Future<bool> stop() async {
     try {
       await _channel.invokeMethod<bool>('stopAirGestures');
-    } catch (_) {}
+    } catch (e) {
+      // Sensor may already be released by the OS; the software state below is
+      // still the source of truth, but the reason is worth one line.
+      debugPrint('[AirGestureService] stopAirGestures failed: $e');
+    }
+    _bannerTimer?.cancel();
+    _bannerTimer = null;
     _isEnabled = false;
     _statusMessage = 'Air Gestures offline';
     notifyListeners();
@@ -95,6 +105,15 @@ class AirGestureService extends ChangeNotifier {
       ));
     }
     return false;
+  }
+
+  /// Releases the banner timer and the gesture notifier.
+  @override
+  void dispose() {
+    _bannerTimer?.cancel();
+    _bannerTimer = null;
+    activeGestureBanner.dispose();
+    super.dispose();
   }
 
   /// Processes an incoming gesture (native sensor or user simulation).

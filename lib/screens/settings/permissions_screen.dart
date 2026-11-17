@@ -6,7 +6,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../services/permission_manager_service.dart';
 
 /// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 authority matrix — the permissions console, rendered from
-/// `assets/hud/permissions.html` so it matches the `uI.html` HUD exactly
+/// `assets/hud/permission.html` so it matches the `uI.html` HUD exactly
 /// (same palette, scanlines, serif type, chamfered panels).
 ///
 /// Bridge contract (JS ↔ Dart, JSON over the `JARVIS_PERMS` channel):
@@ -92,6 +92,9 @@ class _PermissionsScreenState extends State<PermissionsScreen>
         AppPermissionType.mediaStorage,
         AppPermissionType.allFiles,
         AppPermissionType.bluetooth,
+        // A12: nearbyWifi existed in the enum and the request switch but had no
+        // sector row, so the Hub could never show or request it.
+        AppPermissionType.nearbyWifi,
         AppPermissionType.usageStats,
       ],
     ),

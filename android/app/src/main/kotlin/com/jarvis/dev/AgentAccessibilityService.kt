@@ -33,6 +33,12 @@ class AgentAccessibilityService : AccessibilityService() {
 
         /** True while the service is bound and connected by the system. */
         val isConnected: Boolean get() = instance != null
+
+        /**
+         * H7: hard recursion bound for the screen dump. Real UI trees are well
+         * under 40 levels; pathological or adversarial trees are not.
+         */
+        private const val MAX_TRAVERSE_DEPTH = 40
     }
 
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -193,16 +199,51 @@ class AgentAccessibilityService : AccessibilityService() {
         val out = mutableListOf<Map<String, Any>>()
         var index = 0
         for (root in roots) {
-            index = traverse(root, index, out)
+            try {
+                index = traverse(root, index, out, 0)
+            } finally {
+                // H7: release the node we obtained, even if traversal threw.
+                recycleQuietly(root)
+            }
         }
         return out
     }
+
+    /** H7: `recycle()` is safe once; never let a double call crash the dump. */
+    private fun recycleQuietly(node: AccessibilityNodeInfo?) {
+        try {
+            node?.recycle()
+        } catch (_: Exception) {
+            // Already recycled or detached by the framework.
+        }
+    }
+
+    // A14 — READ BEFORE "OPTIMISING" THE RECYCLE CALLS.
+    //
+    // AccessibilityNodeInfo.recycle() has been a no-op since Android 5.0: the
+    // framework holds its own reference and the app does not own the node's
+    // lifetime. Calling it is therefore harmless (and correct on the few API
+    // levels where it still mattered), but it is NOT what fixes a leak here.
+    //
+    // The two real fixes above are:
+    //   1. MAX_TRAVERSE_DEPTH — bounded recursion, so a pathological tree cannot
+    //      blow the stack or run for minutes.
+    //   2. getChild() inside a try + finally — a detached node throws
+    //      IllegalStateException, which used to abort the whole dump.
+    //
+    // If a memory regression is ever observed in this service, the suspect is
+    // the returned List<Map<String, Any>> (it copies every label into a fresh
+    // map on every dump), not a missing recycle().
+
     private fun traverse(
         node: AccessibilityNodeInfo?,
         startIndex: Int,
-        out: MutableList<Map<String, Any>>
+        out: MutableList<Map<String, Any>>,
+        depth: Int
     ): Int {
         if (node == null) return startIndex
+        // H7: bounded recursion — deep or adversarial trees used to overflow.
+        if (depth > MAX_TRAVERSE_DEPTH) return startIndex
         var index = startIndex
 
         val rect = Rect()
@@ -244,8 +285,17 @@ class AgentAccessibilityService : AccessibilityService() {
         }
 
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            index = traverse(child, index, out)
+            val child = try {
+                node.getChild(i)
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            try {
+                index = traverse(child, index, out, depth + 1)
+            } finally {
+                // H7: the caller owns the reference returned by getChild().
+                recycleQuietly(child)
+            }
         }
         return index
     }
@@ -444,7 +494,9 @@ class AgentAccessibilityService : AccessibilityService() {
                         val soft = hwBitmap.copy(Bitmap.Config.ARGB_8888, false)
                         hwBitmap.recycle()
                         val stream = ByteArrayOutputStream()
-                        soft.compress(Bitmap.CompressFormat.PNG, 85, stream)
+                        // H8: PNG is lossless — the quality argument was silently
+                        // ignored. Pass 100 so the code stops implying otherwise.
+                        soft.compress(Bitmap.CompressFormat.PNG, 100, stream)
                         soft.recycle()
                         val b64 = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
                         mainHandler.post { result.success(b64) }

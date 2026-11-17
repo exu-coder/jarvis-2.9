@@ -23,6 +23,7 @@ import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
 import android.provider.CalendarContract
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.telephony.SmsManager
@@ -86,8 +87,10 @@ object DeviceControlManager {
         ),
         "bluetooth" to listOf(
             Manifest.permission.BLUETOOTH_SCAN,
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_ADVERTISE
+            Manifest.permission.BLUETOOTH_CONNECT
+            // A12: BLUETOOTH_ADVERTISE removed — the app never advertises, and
+            // it is not declared in the manifest, so requesting it could only
+            // ever return "denied" and show an un-grantable row in the Hub.
         ),
         "nearbyWifi" to listOf(Manifest.permission.NEARBY_WIFI_DEVICES),
         "bodySensors" to listOf(Manifest.permission.BODY_SENSORS),
@@ -114,7 +117,11 @@ object DeviceControlManager {
             } else {
                 perms
             }
-            report[key] = relevant.any { c.isGranted(it) }
+            // H6: a capability is only ready when EVERY member of its group is
+            // granted. `any` reported SMS/contacts/camera as available with a
+            // single sibling permission held, so features then threw
+            // SecurityException at first use.
+            report[key] = relevant.isNotEmpty() && relevant.all { c.isGranted(it) }
         }
         report["overlay"] = Settings.canDrawOverlays(c)
         report["accessibility"] = AgentAccessibilityService.isConnected
@@ -216,14 +223,16 @@ object DeviceControlManager {
             val minSdk = when (perm) {
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_ADVERTISE,
                 Manifest.permission.NEARBY_WIFI_DEVICES -> Build.VERSION_CODES.S
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.READ_MEDIA_AUDIO -> Build.VERSION_CODES.TIRAMISU
                 Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                 Manifest.permission.POST_NOTIFICATIONS -> Build.VERSION_CODES.TIRAMISU
-                Manifest.permission.BODY_SENSORS_BACKGROUND -> Build.VERSION_CODES.TIRAMISU
+                // A12: BLUETOOTH_ADVERTISE / BODY_SENSORS_BACKGROUND arms removed
+                // with the permissions themselves; keeping a constant for a
+                // permission that is neither declared nor requested is dead code
+                // that invites someone to re-add it.
                 else -> 0
             }
             Build.VERSION.SDK_INT >= minSdk
@@ -455,29 +464,88 @@ object DeviceControlManager {
     // Messaging / calls / contacts / calendar
     // ------------------------------------------------------------------
 
-    fun sendSms(context: Context, address: String, body: String): Map<String, Any> {
+    /**
+     * H5: SMS and calls are irreversible, so both go through an explicit
+     * confirmation gate. A caller that genuinely has a human in front of a
+     * confirm dialog passes `confirmed = true`; every other caller (LLM tool
+     * call, voice command, Telegram) only receives a preview to show.
+     */
+    private fun requiresConfirmation(action: String, preview: String): Map<String, Any> =
+        mapOf(
+            "success" to false,
+            "requiresConfirmation" to true,
+            "action" to action,
+            "preview" to preview,
+            "message" to preview
+        )
+
+    /** Digits plus the usual telephony punctuation. */
+    private val phoneNumberPattern = Regex("^[+]?[0-9][0-9\\s()\\-.]{1,24}$")
+
+    /**
+     * H5: re-read / validate the recipient before anything is dialled or sent.
+     * Returns the trimmed number, or null when it does not look like one.
+     */
+    private fun validatedNumber(value: String): String? {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return null
+        if (!phoneNumberPattern.matches(trimmed)) return null
+        val digits = trimmed.count { it.isDigit() }
+        if (digits < 3 || digits > 15) return null
+        return trimmed
+    }
+
+    fun sendSms(
+        context: Context,
+        address: String,
+        body: String,
+        confirmed: Boolean = false
+    ): Map<String, Any> {
         if (!context.isGranted(Manifest.permission.SEND_SMS)) {
             return mapOf<String, Any>("success" to false, "message" to "SEND_SMS permission not granted.")
+        }
+        if (body.isBlank()) {
+            return mapOf<String, Any>("success" to false, "message" to "SMS body is empty.")
+        }
+        val recipient = validatedNumber(address)
+            ?: return mapOf<String, Any>(
+                "success" to false,
+                "message" to "Recipient \"$address\" is not a valid phone number — resolve the contact again."
+            )
+        if (!confirmed) {
+            val previewBody = if (body.length > 80) body.take(80) + "…" else body
+            return requiresConfirmation("sms", "Send SMS to $recipient: \"$previewBody\"")
         }
         return try {
             @Suppress("DEPRECATION")
             val smsManager = SmsManager.getDefault()
             val parts = smsManager.divideMessage(body)
             if (parts.size <= 1) {
-                smsManager.sendTextMessage(address, null, body, null, null)
+                smsManager.sendTextMessage(recipient, null, body, null, null)
             } else {
-                smsManager.sendMultipartTextMessage(address, null, parts, null, null)
+                smsManager.sendMultipartTextMessage(recipient, null, parts, null, null)
             }
-            mapOf<String, Any>("success" to true, "message" to "SMS sent to $address.")
+            mapOf<String, Any>("success" to true, "message" to "SMS sent to $recipient.")
         } catch (e: Exception) {
             mapOf<String, Any>("success" to false, "message" to (e.message ?: "SMS failed"))
         }
     }
 
-    fun placeCall(context: Context, number: String): Map<String, Any> {
-        val uri = Uri.parse("tel:${Uri.encode(number)}")
+    fun placeCall(context: Context, number: String, confirmed: Boolean = false): Map<String, Any> {
+        val target = validatedNumber(number)
+            ?: return mapOf<String, Any>(
+                "success" to false,
+                "message" to "\"$number\" is not a valid phone number."
+            )
+        val canCallDirectly = context.isGranted(Manifest.permission.CALL_PHONE)
+        // Handing the number to the system dialer still needs a final tap by the
+        // user, so it is safe on its own. ACTION_CALL places a real call.
+        if (canCallDirectly && !confirmed) {
+            return requiresConfirmation("call", "Place a phone call to $target")
+        }
+        val uri = Uri.parse("tel:${Uri.encode(target)}")
         return try {
-            val action = if (context.isGranted(Manifest.permission.CALL_PHONE)) {
+            val action = if (canCallDirectly) {
                 Intent.ACTION_CALL
             } else {
                 Intent.ACTION_DIAL
@@ -486,7 +554,7 @@ object DeviceControlManager {
                 Intent(action, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             val mode = if (action == Intent.ACTION_CALL) "Call placed" else "Dialer opened"
-            mapOf<String, Any>("success" to true, "message" to "$mode for $number.")
+            mapOf<String, Any>("success" to true, "message" to "$mode for $target.")
         } catch (e: Exception) {
             mapOf<String, Any>("success" to false, "message" to (e.message ?: "call failed"))
         }
@@ -529,13 +597,68 @@ object DeviceControlManager {
         }
     }
 
-    /** Resolves a spoken name like "mom" to the best matching contact number. */
+    /** Digits-only form of a number, capped to the national significant part. */
+    private fun digitsOf(number: String): String =
+        number.filter { it.isDigit() }.takeLast(10)
+
+    /** Same lenient name comparison the old single-result resolver used. */
+    private fun nameMatchesLoosely(name: String, needle: String): Boolean =
+        name.isNotEmpty() &&
+            (name.startsWith(needle) || name.contains(needle) || needle.contains(name))
+
+    /**
+     * Resolves a spoken name like "mom" to matching contact numbers.
+     *
+     * A1: one name can legitimately match more than one number — the same
+     * contact saved twice, a contact plus a call-history entry, or two "Jarvis"
+     * entries. This function never picks one of those by itself. It returns one
+     * of three shapes:
+     *
+     *   success=true,  requiresChoice=false, contact={name,number}, matches=[…]
+     *                                              — exactly one candidate
+     *   success=false, requiresChoice=true,  matches=[{name,number}], count=N
+     *                                              — several candidates
+     *   success=false, count=0, message="…"        — none
+     *
+     * Callers that only understand the old single-result shape therefore fail
+     * closed (they refuse to dial) instead of dialling a guess, while the voice
+     * layer can read `matches` and ask the user which one they meant.
+     *
+     * Call-history-only numbers are included when READ_CALL_LOG is granted, so a
+     * name that was never saved as a contact can still be called back.
+     */
     fun resolveContact(context: Context, query: String): Map<String, Any> {
         if (!context.isGranted(Manifest.permission.READ_CONTACTS)) {
             return mapOf<String, Any>("success" to false, "message" to "READ_CONTACTS permission not granted.")
         }
+        val needle = query.trim().lowercase()
+        if (needle.isEmpty()) {
+            return mapOf<String, Any>("success" to false, "message" to "No contact name given.")
+        }
         return try {
-            val needle = query.trim().lowercase()
+            val exact = mutableListOf<Map<String, String>>()
+            val fuzzy = mutableListOf<Map<String, String>>()
+            // Dedupe on the digits themselves, not the formatting, so
+            // "+91 98765 43210" and "09876543210" count as one number.
+            val seen = mutableSetOf<String>()
+
+            fun record(
+                target: MutableList<Map<String, String>>,
+                name: String,
+                number: String,
+                source: String
+            ) {
+                val key = digitsOf(number)
+                if (key.isEmpty() || !seen.add(key)) return
+                target.add(
+                    mapOf(
+                        "name" to name,
+                        "number" to number,
+                        "source" to source
+                    )
+                )
+            }
+
             val cursor = context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 arrayOf(
@@ -546,33 +669,77 @@ object DeviceControlManager {
                 null,
                 ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
             )
-            var exact: Map<String, String>? = null
-            var fuzzy: Map<String, String>? = null
             cursor?.use {
                 val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
                 val numberIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 while (it.moveToNext()) {
                     val name = if (nameIdx >= 0) (it.getString(nameIdx) ?: "") else ""
                     val number = if (numberIdx >= 0) (it.getString(numberIdx) ?: "") else ""
-                    val lowerName = name.lowercase()
+                    if (name.isBlank() || number.isBlank()) continue
+                    val lowerName = name.lowercase().trim()
                     when {
-                        lowerName == needle -> {
-                            exact = mapOf("name" to name, "number" to number)
-                        }
-                        fuzzy == null &&
-                            (lowerName.startsWith(needle) || lowerName.contains(needle) ||
-                                needle.contains(lowerName)) -> {
-                            fuzzy = mapOf("name" to name, "number" to number)
-                        }
+                        lowerName == needle -> record(exact, name, number, "contact")
+                        nameMatchesLoosely(lowerName, needle) ->
+                            record(fuzzy, name, number, "contact")
                     }
-                    if (exact != null) break
                 }
             }
-            val match = exact ?: fuzzy
-            if (match != null) {
-                mapOf<String, Any>("success" to true, "contact" to match)
-            } else {
-                mapOf<String, Any>("success" to false, "message" to "No contact matched \"$query\".")
+
+            // A1: call history. Only consulted when the permission is actually
+            // held; the manifest requests it, but a user may have denied it.
+            if (context.isGranted(Manifest.permission.READ_CALL_LOG)) {
+                val logCursor = context.contentResolver.query(
+                    CallLog.Calls.CONTENT_URI,
+                    arrayOf(CallLog.Calls.CACHED_NAME, CallLog.Calls.NUMBER),
+                    null,
+                    null,
+                    CallLog.Calls.DATE + " DESC"
+                )
+                logCursor?.use {
+                    val nameIdx = it.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                    val numIdx = it.getColumnIndex(CallLog.Calls.NUMBER)
+                    var scanned = 0
+                    while (it.moveToNext() && scanned < 500) {
+                        scanned++
+                        val name = if (nameIdx >= 0) (it.getString(nameIdx) ?: "") else ""
+                        val number = if (numIdx >= 0) (it.getString(numIdx) ?: "") else ""
+                        if (name.isBlank() || number.isBlank()) continue
+                        val lowerName = name.lowercase().trim()
+                        when {
+                            lowerName == needle -> record(exact, name, number, "callHistory")
+                            nameMatchesLoosely(lowerName, needle) ->
+                                record(fuzzy, name, number, "callHistory")
+                        }
+                    }
+                }
+            }
+
+            // Exact hits always win over loose ones: if the user said a full
+            // name, a substring match on a different contact is not a candidate.
+            val candidates = if (exact.isNotEmpty()) exact else fuzzy
+
+            when {
+                candidates.isEmpty() -> mapOf<String, Any>(
+                    "success" to false,
+                    "requiresChoice" to false,
+                    "count" to 0,
+                    "matches" to emptyList<Map<String, String>>(),
+                    "message" to "No contact matched \"$query\"."
+                )
+                candidates.size == 1 -> mapOf<String, Any>(
+                    "success" to true,
+                    "requiresChoice" to false,
+                    "count" to 1,
+                    "contact" to candidates.first(),
+                    "matches" to candidates
+                )
+                else -> mapOf<String, Any>(
+                    "success" to false,
+                    "requiresChoice" to true,
+                    "count" to candidates.size,
+                    "matches" to candidates,
+                    "message" to "I found ${candidates.size} numbers for \"$query\"."
+                )
             }
         } catch (e: Exception) {
             mapOf<String, Any>("success" to false, "message" to (e.message ?: "contact lookup failed"))

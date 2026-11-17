@@ -360,12 +360,15 @@ border:1px solid rgba(66,232,255,.5);padding:10px 16px}
     private fun expand() {
         if (panelWindow != null) return
         mainHandler.post {
-            try {
-                orbWindow?.let { windowManager.removeView(it) }
-            } catch (_: Exception) {
-            }
+            val previousOrb = orbWindow
             orbWindow = null
             orbParams = null
+            try {
+                previousOrb?.let { windowManager.removeView(it) }
+            } catch (_: Exception) {
+            }
+            // The collapsed orb is replaced by the panel; release its renderer.
+            destroyQuietly(previousOrb)
 
             val width = min(screenW - (16 * density).toInt(), (390 * density).toInt())
             val height = min((screenH * 0.72f).toInt(), (640 * density).toInt())
@@ -430,39 +433,59 @@ border:1px solid rgba(66,232,255,.5);padding:10px 16px}
     private fun collapse() {
         if (panelWindow == null) return
         mainHandler.post {
-            try {
-                panelWindow?.let { windowManager.removeView(it) }
-            } catch (_: Exception) {
-            }
+            val panel = panelWindow
             panelWindow = null
             panelParams = null
+            try {
+                panel?.let { windowManager.removeView(it) }
+            } catch (_: Exception) {
+            }
+            // Each expand/collapse cycle builds a new WebView; without destroy()
+            // every cycle leaked a renderer.
+            destroyQuietly(panel)
             rebuildOrb()
         }
     }
 
     private fun teardown() {
         mainHandler.post {
-            try {
-                panelWindow?.let { windowManager.removeView(it) }
-                orbWindow?.let { windowManager.removeView(it) }
-            } catch (_: Exception) {
-            }
+            val panel = panelWindow
+            val orb = orbWindow
             panelWindow = null
             panelParams = null
             orbWindow = null
             orbParams = null
+            try {
+                panel?.let { windowManager.removeView(it) }
+                orb?.let { windowManager.removeView(it) }
+            } catch (_: Exception) {
+            }
+            // Detaching a WebView is not enough: its Chromium renderer stays
+            // alive until destroy() is called.
+            destroyQuietly(panel)
+            destroyQuietly(orb)
+        }
+    }
+
+    private fun destroyQuietly(webView: WebView?) {
+        try {
+            webView?.destroy()
+        } catch (_: Exception) {
         }
     }
 
     /** Delivers an AI answer into the expanded panel. */
     fun deliverReply(reply: String?) {
-        val safe = (reply ?: "My apologies, sir — the uplink is unavailable.")
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "")
+        val safe = reply ?: "My apologies, sir — the uplink is unavailable."
+        // A JSON string literal is the correct encoder here: it escapes quotes,
+        // backslashes and control characters, so the reply can never terminate
+        // the call. U+2028/U+2029 are escaped explicitly because older platform
+        // JSON writers leave them raw and they still end a JS line.
+        val literal = org.json.JSONObject.quote(safe)
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
         mainHandler.post {
-            panelWindow?.evaluateJavascript("window.onBubbleReply(\"$safe\");", null)
+            panelWindow?.evaluateJavascript("window.onBubbleReply($literal);", null)
         }
     }
 

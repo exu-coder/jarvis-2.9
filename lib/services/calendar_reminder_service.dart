@@ -172,7 +172,10 @@ class CalendarReminderService extends ChangeNotifier {
           ),
         ),
       );
-    } catch (_) {}
+    } catch (error) {
+      // A dropped reminder must not abort scheduling of the remaining items.
+      debugPrint('[CalendarReminderService] notification failed for ${item.id}: $error');
+    }
   }
 
   /// Deletes an item by ID.

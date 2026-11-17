@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ai_service.dart';
 import 'calendar_reminder_service.dart';
@@ -52,11 +53,99 @@ class ProactiveAgentService extends ChangeNotifier {
   DateTime? _lastProactiveSpokenTime;
   final Set<String> _spokenDeduplicationIds = {};
 
+  /// SharedPreferences key holding the persisted dedup memory, as JSON:
+  /// `{"ids": [...], "last_spoken_ms": 0}`.
+  static const String dedupPrefsKey = 'proactive_shown_ids';
+
+  /// Upper bound on remembered suggestion ids (memory and disk).
+  static const int maxRememberedIds = 100;
+
+  bool _dedupLoaded = false;
+
+  /// Serializes dedup state for persistence, keeping only the newest ids.
+  @visibleForTesting
+  static String encodeDedupState(Iterable<String> ids, DateTime? lastSpoken) {
+    final list = ids.toList();
+    final bounded = list.length > maxRememberedIds
+        ? list.sublist(list.length - maxRememberedIds)
+        : list;
+    return jsonEncode({
+      'ids': bounded,
+      'last_spoken_ms': lastSpoken?.millisecondsSinceEpoch ?? 0,
+    });
+  }
+
+  /// Parses persisted dedup state, tolerating missing or malformed JSON.
+  @visibleForTesting
+  static ({List<String> ids, DateTime? lastSpoken}) decodeDedupState(
+    String? raw,
+  ) {
+    if (raw == null || raw.trim().isEmpty) {
+      return (ids: const <String>[], lastSpoken: null);
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return (ids: const <String>[], lastSpoken: null);
+      }
+      final ids = <String>[];
+      final rawIds = decoded['ids'];
+      if (rawIds is List) {
+        for (final id in rawIds) {
+          if (ids.length >= maxRememberedIds) break;
+          final value = id?.toString() ?? '';
+          if (value.isNotEmpty) ids.add(value);
+        }
+      }
+      final ms = decoded['last_spoken_ms'];
+      return (
+        ids: ids,
+        lastSpoken:
+            ms is int && ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
+      );
+    } catch (e) {
+      debugPrint('[ProactiveAgentService] dedup state unreadable: $e');
+      return (ids: const <String>[], lastSpoken: null);
+    }
+  }
+
+  /// Restores dedup/cooldown state once per process.
+  ///
+  /// Without this every restart re-fires suggestions the user has already been
+  /// shown, and the 15-minute cooldown resets to zero.
+  Future<void> _ensureDedupLoaded() async {
+    if (_dedupLoaded) return;
+    _dedupLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final restored = decodeDedupState(prefs.getString(dedupPrefsKey));
+      _spokenDeduplicationIds
+        ..clear()
+        ..addAll(restored.ids);
+      _lastProactiveSpokenTime = restored.lastSpoken;
+    } catch (e) {
+      debugPrint('[ProactiveAgentService] dedup restore failed: $e');
+    }
+  }
+
+  Future<void> _persistDedupState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        dedupPrefsKey,
+        encodeDedupState(_spokenDeduplicationIds, _lastProactiveSpokenTime),
+      );
+    } catch (e) {
+      debugPrint('[ProactiveAgentService] dedup persist failed: $e');
+    }
+  }
+
   bool get isMonitoring => _monitorTimer != null;
 
   /// Starts the autonomous periodic monitor daemon (runs every 45 seconds).
   void startProactiveMonitor({Duration interval = const Duration(seconds: 45)}) {
     _monitorTimer?.cancel();
+    unawaited(_ensureDedupLoaded());
     _monitorTimer = Timer.periodic(interval, (_) {
       unawaited(checkAndTriggerProactiveAlert());
     });
@@ -72,6 +161,7 @@ class ProactiveAgentService extends ChangeNotifier {
   void clearDeduplicationHistory() {
     _spokenDeduplicationIds.clear();
     _lastProactiveSpokenTime = null;
+    unawaited(_persistDedupState());
   }
 
   /// Evaluates context to generate an intelligent proactive recommendation.
@@ -242,6 +332,7 @@ class ProactiveAgentService extends ChangeNotifier {
 
   /// Evaluates triggers and autonomously vocalizes proactive prompts when appropriate.
   Future<void> checkAndTriggerProactiveAlert({bool forceSpeak = false}) async {
+    await _ensureDedupLoaded();
     final suggestion = await evaluateProactiveNeeds();
     if (suggestion == null) return;
 
@@ -269,7 +360,12 @@ class ProactiveAgentService extends ChangeNotifier {
     }
 
     _spokenDeduplicationIds.add(suggestion.id);
+    // Keep the in-memory set bounded exactly like the persisted copy.
+    if (_spokenDeduplicationIds.length > maxRememberedIds) {
+      _spokenDeduplicationIds.remove(_spokenDeduplicationIds.first);
+    }
     _lastProactiveSpokenTime = DateTime.now();
+    await _persistDedupState();
 
     // Trigger proactive speech and hands-free conversational confirmation window
     await JarvisService.instance.proactivelySpeakAndAwaitConfirmation(suggestion);

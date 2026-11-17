@@ -17,7 +17,11 @@ class PhoneStorageService {
   }) async {
     try {
       final res = await _channel.invokeMapMethod<String, dynamic>('manageStorageFile', {
-        'action': append ? 'edit' : 'create',
+        // H1: the native handler only understands create/write/read/list/delete.
+        // This used to send 'edit' when append was true, which fell through to
+        // UNKNOWN_ACTION and made every append silently fail. `append` below is
+        // the flag the native branch actually reads.
+        'action': 'write',
         'folder': folder,
         'fileName': fileName,
         'content': content,

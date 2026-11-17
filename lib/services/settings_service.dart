@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Interaction mode of the home screen.
@@ -20,13 +23,30 @@ enum JarvisScreenStyle { arcReactor, jarvis }
 
 /// Central, observable store for all user-configurable settings.
 ///
-/// Backed by SharedPreferences. Access via [SettingsService.instance] after
-/// calling [init] once at app start.
+/// Backed by SharedPreferences for preferences and by Keystore-backed
+/// [FlutterSecureStorage] for secrets (LLM API key, Telegram bot token).
+/// Access via [SettingsService.instance] after calling [init] once at app start.
 class SettingsService extends ChangeNotifier {
   SettingsService._();
   static final SettingsService instance = SettingsService._();
 
   SharedPreferences? _prefs;
+
+  // ------------------------------------------------------------------
+  // Secrets (C2)
+  // ------------------------------------------------------------------
+
+  /// Keystore-backed store for the two secrets. Values are cached in memory
+  /// because every caller reads them through the synchronous getters below.
+  static const FlutterSecureStorage _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
+  static const String _secureApiKeyKey = 'ai_api_key';
+  static const String _secureTelegramTokenKey = 'telegram_token';
+
+  String _secureApiKey = '';
+  String _secureTelegramToken = '';
 
   bool get isReady => _prefs != null;
 
@@ -35,6 +55,65 @@ class SettingsService extends ChangeNotifier {
     // Ensure system prompt is enabled so models always receive the agent action grammar
     if (_prefs?.getBool('ai_use_system_prompt') != true) {
       await _prefs?.setBool('ai_use_system_prompt', true);
+    }
+    await _loadSecrets();
+  }
+
+  /// Loads both secrets from secure storage into memory and moves any
+  /// plaintext leftovers out of SharedPreferences (one-time migration).
+  Future<void> _loadSecrets() async {
+    try {
+      _secureApiKey = await _secure.read(key: _secureApiKeyKey) ?? '';
+      _secureTelegramToken =
+          await _secure.read(key: _secureTelegramTokenKey) ?? '';
+    } catch (e) {
+      debugPrint('[SettingsService] Secure storage unavailable: $e');
+      _secureApiKey = '';
+      _secureTelegramToken = '';
+    }
+
+    _secureApiKey = await _migratePlaintextSecret(
+      prefsKey: _secureApiKeyKey,
+      cached: _secureApiKey,
+      secureKey: _secureApiKeyKey,
+    );
+    _secureTelegramToken = await _migratePlaintextSecret(
+      prefsKey: _secureTelegramTokenKey,
+      cached: _secureTelegramToken,
+      secureKey: _secureTelegramTokenKey,
+    );
+  }
+
+  /// Earlier builds stored these two values with `SharedPreferences.setString`,
+  /// which also put them into Android auto-backup. Copy the plaintext value into
+  /// secure storage (when secure storage has nothing yet) and delete the
+  /// plaintext entry either way.
+  Future<String> _migratePlaintextSecret({
+    required String prefsKey,
+    required String cached,
+    required String secureKey,
+  }) async {
+    final legacy = _prefs?.getString(prefsKey)?.trim() ?? '';
+    if (legacy.isEmpty) return cached;
+    var value = cached;
+    if (value.isEmpty) {
+      value = legacy;
+      await _writeSecret(secureKey, value);
+      debugPrint('[SettingsService] Migrated "$prefsKey" to secure storage.');
+    }
+    await _prefs?.remove(prefsKey);
+    return value;
+  }
+
+  Future<void> _writeSecret(String key, String value) async {
+    try {
+      if (value.isEmpty) {
+        await _secure.delete(key: key);
+      } else {
+        await _secure.write(key: key, value: value);
+      }
+    } catch (e) {
+      debugPrint('[SettingsService] Could not persist secret "$key": $e');
     }
   }
 
@@ -98,9 +177,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get apiKey => _prefs?.getString('ai_api_key') ?? '';
+  /// LLM API key. Never written to SharedPreferences — it lives in
+  /// Keystore-backed storage and is cached here for synchronous reads.
+  String get apiKey => _secureApiKey;
   Future<void> setApiKey(String value) async {
-    await _prefs?.setString('ai_api_key', value.trim());
+    final trimmed = value.trim();
+    _secureApiKey = trimmed;
+    await _writeSecret(_secureApiKeyKey, trimmed);
     notifyListeners();
   }
 
@@ -166,14 +249,21 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get telegramToken => _prefs?.getString('telegram_token') ?? '';
+  /// Telegram bot token. Keystore-backed; read synchronously from the cache.
+  String get telegramToken => _secureTelegramToken;
   Future<void> setTelegramToken(String value) async {
-    await _prefs?.setString('telegram_token', value.trim());
+    final trimmed = value.trim();
+    _secureTelegramToken = trimmed;
+    await _writeSecret(_secureTelegramTokenKey, trimmed);
     notifyListeners();
   }
 
-  /// Chat ids allowed to control the device. Empty = the first chat that
-  /// messages the bot becomes the owner (and is remembered).
+  /// Chat ids allowed to control the device.
+  ///
+  /// C3: pairing is explicit. The user requests a code on the phone, sends
+  /// `/pair <code>` to the bot, and only then does the chat land in this list.
+  /// There is no implicit "the first chat that writes becomes the owner" path
+  /// any more.
   List<String> get telegramAllowedChats =>
       _prefs?.getStringList('telegram_allowed_chats') ?? const [];
   Future<void> setTelegramAllowedChats(List<String> value) async {
@@ -181,11 +271,126 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Primary paired chat — the push destination used by security alerts and
+  /// Sentry snapshots. Derived from [telegramAllowedChats]; it is no longer an
+  /// authorization source.
   String get telegramOwnerChatId =>
-      _prefs?.getString('telegram_owner_chat') ?? '';
-  Future<void> setTelegramOwnerChatId(String value) async {
-    await _prefs?.setString('telegram_owner_chat', value.trim());
+      telegramAllowedChats.isNotEmpty ? telegramAllowedChats.first : '';
+
+  /// A6: full revoke of remote access.
+  ///
+  /// Clears every paired chat, any outstanding pairing code and the bot token
+  /// itself, so the bridge stops working immediately and cannot be re-armed by
+  /// a chat that was previously paired.
+  ///
+  /// The token must also be revoked in @BotFather: Telegram has no API to
+  /// rotate a bot token, so a fresh one has to be issued there and pasted back
+  /// in. Until then the bridge has no credentials at all, which is the safe
+  /// state.
+  Future<void> revokeTelegramAccess() async {
+    await setTelegramAllowedChats(const []);
+    await clearTelegramPairCode();
+    await setTelegramToken('');
     notifyListeners();
+  }
+
+  // ------------------------------------------------------------------
+  // Telegram pairing code (C3)
+  // ------------------------------------------------------------------
+
+  static const String _pairCodeKey = 'telegram_pair_code';
+  static const String _pairExpiryKey = 'telegram_pair_expiry';
+  static const String _pairFailKey = 'telegram_pair_failures';
+
+  /// How long a freshly issued pairing code stays usable.
+  static const Duration telegramPairCodeTtl = Duration(minutes: 10);
+
+  /// Wrong guesses allowed before the displayed code is destroyed. Five keeps
+  /// the odds of a blind guess at 5-in-a-million per code.
+  static const int maxPairAttempts = 5;
+
+  /// The code currently offered to the user (may be expired/empty).
+  String get telegramPairCode => _prefs?.getString(_pairCodeKey) ?? '';
+  int get telegramPairCodeExpiresAt => _prefs?.getInt(_pairExpiryKey) ?? 0;
+
+  /// True while a displayed code can still be redeemed.
+  bool get telegramPairCodeIsActive {
+    final code = telegramPairCode;
+    if (code.length != 6) return false;
+    final expiry = telegramPairCodeExpiresAt;
+    if (expiry <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch < expiry;
+  }
+
+  /// Six digits from [Random.secure] (cryptographically secure on Android).
+  static String generateTelegramPairCode([Random? random]) {
+    final rnd = random ?? Random.secure();
+    return rnd.nextInt(1000000).toString().padLeft(6, '0');
+  }
+
+  /// Pure validator, so the pairing rules stay unit-testable without
+  /// SharedPreferences or a device. Compares digits in constant time and
+  /// rejects an empty/expired code.
+  static bool isTelegramPairCodeValid({
+    required String stored,
+    required int expiresAtMs,
+    required String candidate,
+    required int nowMs,
+  }) {
+    if (stored.length != 6 || candidate.length != 6) return false;
+    if (expiresAtMs <= 0 || nowMs >= expiresAtMs) return false;
+    var diff = 0;
+    for (var i = 0; i < stored.length; i++) {
+      diff |= stored.codeUnitAt(i) ^ candidate.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
+
+  /// Issues a fresh code, stores it with its expiry and returns it so the
+  /// settings screen can display it.
+  Future<String> issueTelegramPairCode() async {
+    final code = generateTelegramPairCode();
+    final expiry =
+        DateTime.now().add(telegramPairCodeTtl).millisecondsSinceEpoch;
+    await _prefs?.setString(_pairCodeKey, code);
+    await _prefs?.setInt(_pairExpiryKey, expiry);
+    // A new code always starts with a clean attempt budget.
+    await _prefs?.setInt(_pairFailKey, 0);
+    notifyListeners();
+    return code;
+  }
+
+  Future<void> clearTelegramPairCode() async {
+    await _prefs?.remove(_pairCodeKey);
+    await _prefs?.remove(_pairExpiryKey);
+    await _prefs?.remove(_pairFailKey);
+    notifyListeners();
+  }
+
+  /// Redeems [candidate] once: returns true only for the stored, unexpired
+  /// code, and invalidates the code in that case.
+  Future<bool> consumeTelegramPairCode(String candidate) async {
+    final ok = isTelegramPairCodeValid(
+      stored: telegramPairCode,
+      expiresAtMs: telegramPairCodeExpiresAt,
+      candidate: candidate.trim(),
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    if (ok) {
+      await clearTelegramPairCode();
+      return true;
+    }
+    // Failed attempts are counted and the code is destroyed after
+    // [maxPairAttempts] misses. Without that cap a 6-digit code is a
+    // 1-in-a-million lottery an unpaired chat can play for the whole TTL — and
+    // the bot username is public.
+    final failures = (_prefs?.getInt(_pairFailKey) ?? 0) + 1;
+    if (failures >= maxPairAttempts) {
+      await clearTelegramPairCode();
+    } else {
+      await _prefs?.setInt(_pairFailKey, failures);
+    }
+    return false;
   }
 
   int get telegramUpdateOffset => _prefs?.getInt('telegram_offset') ?? 0;
@@ -261,6 +466,19 @@ class SettingsService extends ChangeNotifier {
       _prefs?.getBool('jarvis_use_neural_voice') ?? false;
   Future<void> setUseNeuralVoice(bool value) async {
     await _prefs?.setBool('jarvis_use_neural_voice', value);
+    notifyListeners();
+  }
+
+  /// Set when the Edge-TTS endpoint has stopped working (Microsoft rotates the
+  /// `Sec-MS-GEC` token format and the pinned browser version), so speech
+  /// downgrades to the on-device engine instead of failing silently.
+  ///
+  /// Persisted so the downgrade survives a restart; cleared by
+  /// `EdgeTtsService.resetDowngrade()`.
+  bool get neuralVoiceDegraded =>
+      _prefs?.getBool('jarvis_neural_voice_degraded') ?? false;
+  Future<void> setNeuralVoiceDegraded(bool value) async {
+    await _prefs?.setBool('jarvis_neural_voice_degraded', value);
     notifyListeners();
   }
 
