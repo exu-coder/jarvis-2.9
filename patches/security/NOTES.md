@@ -93,8 +93,13 @@ therefore uploaded to the user's Google account.
 
 ### What changed
 
-- New dependency `flutter_secure_storage: ^9.2.4` used with
-  `AndroidOptions(encryptedSharedPreferences: true)` (Android Keystore-backed).
+- New dependency `flutter_secure_storage: ^11.2.0`, used with the default
+  `AndroidOptions()` — the plugin's own encrypted file with the AES key wrapped
+  in the Android KeyStore. **v11, not 9.x:** 9.x pins `win32 ^5` and cannot
+  resolve against `share_plus ^13` (`win32 ^6`); CI failed on exactly that
+  conflict at `flutter pub get`. v11 also dropped
+  `AndroidOptions.encryptedSharedPreferences` (and `sharedPreferencesName`), so
+  the old option would not have compiled.
 - Both secrets read/write through `FlutterSecureStorage`; the getters stay
   synchronous because the values are cached in memory after `init()`.
 - One-time migration `_migratePlaintextSecret()`: if secure storage is empty and a
@@ -125,8 +130,11 @@ therefore uploaded to the user's Google account.
 
 ### PENDING RUNTIME
 
-- `flutter pub get` has not run; `flutter_secure_storage` is not in
-  `pubspec.lock` yet.
+- `flutter pub get` has not been run on a device, but **CI has now run it and it
+  failed**: `flutter_secure_storage ^9.2.4` + `share_plus ^13.3.0` is an
+  unsatisfiable `win32` constraint (`^5.0.0` vs `^6.0.1`). Fixed by moving to
+  `^11.2.0` (see above). `pubspec.lock` is not committed, so the resolved set is
+  whatever the CI runner resolves on the day.
 - Migration must be exercised on a device that already has a plaintext key: first
   launch should log `Migrated "ai_api_key" to secure storage.` and the key must
   survive a restart.

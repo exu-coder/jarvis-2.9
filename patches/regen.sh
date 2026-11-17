@@ -3,6 +3,9 @@
 # Run from the authoring worktree root (jarvis-2.9 at b573599).
 set -euo pipefail
 
+# Audit baseline: every patch is expressed relative to this commit.
+BASE=b5735999f54a51de2ce54ea414198b1dbd18064a
+
 cd "$(dirname "$0")/.."
 
 SEC=(
@@ -65,7 +68,9 @@ emit_area() {
     base="$(basename "$f")"
     local out
     out="$(printf 'patches/%s/%02d-%s.patch' "$area" "$n" "$base")"
-    git diff -- "$f" > "$out"
+    # Diffed against the audit baseline, not HEAD: the patch set must describe
+    # the complete remediation from a pristine b573599.
+    git diff "$BASE" -- "$f" > "$out"
     if [ ! -s "$out" ]; then
       echo "WARN: empty patch for $f" >&2
     fi
@@ -79,8 +84,8 @@ emit_area security "${SEC[@]}"
 emit_area functional "${FUN[@]}"
 emit_area resources "${RES[@]}"
 
-# Authoritative combined diff: source changes only.
-git diff -- \
+# Authoritative combined diff: source changes only, against the audit baseline.
+git diff "$BASE" -- \
   . ':!patches' ':!tests' ':!report.md' ':!VERIFICATION.md' ':!OPEN_QUESTIONS.md' \
   > patches/all.patch
 

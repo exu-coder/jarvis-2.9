@@ -1,5 +1,5 @@
 diff --git a/lib/services/settings_service.dart b/lib/services/settings_service.dart
-index 8df46b7..cf8a767 100644
+index 8df46b7..7545266 100644
 --- a/lib/services/settings_service.dart
 +++ b/lib/services/settings_service.dart
 @@ -1,4 +1,7 @@
@@ -10,7 +10,7 @@ index 8df46b7..cf8a767 100644
  import 'package:shared_preferences/shared_preferences.dart';
  
  /// Interaction mode of the home screen.
-@@ -20,14 +23,31 @@ enum JarvisScreenStyle { arcReactor, jarvis }
+@@ -20,14 +23,36 @@ enum JarvisScreenStyle { arcReactor, jarvis }
  
  /// Central, observable store for all user-configurable settings.
  ///
@@ -29,10 +29,15 @@ index 8df46b7..cf8a767 100644
 +  // Secrets (C2)
 +  // ------------------------------------------------------------------
 +
-+  /// Keystore-backed store for the two secrets. Values are cached in memory
++  /// Keystore-wrapped store for the two secrets. Values are cached in memory
 +  /// because every caller reads them through the synchronous getters below.
++  ///
++  /// v11 dropped `AndroidOptions.encryptedSharedPreferences` — the plugin now
++  /// keeps its own encrypted file and wraps the AES key in the Android
++  /// KeyStore, which is the stronger of the two schemes and is no longer
++  /// dependent on the deprecated androidx.security crypto artifact.
 +  static const FlutterSecureStorage _secure = FlutterSecureStorage(
-+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
++    aOptions: AndroidOptions(),
 +  );
 +
 +  static const String _secureApiKeyKey = 'ai_api_key';
@@ -44,7 +49,7 @@ index 8df46b7..cf8a767 100644
    bool get isReady => _prefs != null;
  
    Future<void> init() async {
-@@ -36,6 +56,65 @@ class SettingsService extends ChangeNotifier {
+@@ -36,6 +61,65 @@ class SettingsService extends ChangeNotifier {
      if (_prefs?.getBool('ai_use_system_prompt') != true) {
        await _prefs?.setBool('ai_use_system_prompt', true);
      }
@@ -110,7 +115,7 @@ index 8df46b7..cf8a767 100644
    }
  
    // ------------------------------------------------------------------
-@@ -98,9 +177,13 @@ class SettingsService extends ChangeNotifier {
+@@ -98,9 +182,13 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -126,7 +131,7 @@ index 8df46b7..cf8a767 100644
      notifyListeners();
    }
  
-@@ -166,14 +249,21 @@ class SettingsService extends ChangeNotifier {
+@@ -166,14 +254,21 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -152,7 +157,7 @@ index 8df46b7..cf8a767 100644
    List<String> get telegramAllowedChats =>
        _prefs?.getStringList('telegram_allowed_chats') ?? const [];
    Future<void> setTelegramAllowedChats(List<String> value) async {
-@@ -181,13 +271,128 @@ class SettingsService extends ChangeNotifier {
+@@ -181,13 +276,128 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -284,7 +289,7 @@ index 8df46b7..cf8a767 100644
    int get telegramUpdateOffset => _prefs?.getInt('telegram_offset') ?? 0;
    Future<void> setTelegramUpdateOffset(int value) async {
      await _prefs?.setInt('telegram_offset', value);
-@@ -264,6 +469,19 @@ class SettingsService extends ChangeNotifier {
+@@ -264,6 +474,19 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
