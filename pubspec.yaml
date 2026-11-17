@@ -35,9 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
-  # Secrets (LLM API key, Telegram bot token) — Keystore-backed, never plain
-  # SharedPreferences. Reads are synchronous after SettingsService.init().
-  flutter_secure_storage: ^9.2.4
+  # Secrets (LLM API key, Telegram bot token) — Keystore-wrapped AES, never
+  # plain SharedPreferences. Reads are synchronous after SettingsService.init().
+  # 11.x is required: 9.x pins win32 ^5 while share_plus 13 needs win32 ^6.
+  flutter_secure_storage: ^11.2.0
 
   # Networking
   http: ^1.4.0

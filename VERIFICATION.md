@@ -75,7 +75,7 @@ physical device. Consequently **`flutter analyze`, `flutter test`,
 | ID | Status | Notes |
 |---|---|---|
 | **C1** path traversal | **DONE** | `isSafeStorageSegment` + `resolveStorageChild` (canonical containment) + hardened `getTargetFolder`; all four `manageStorageFile` branches return `INVALID_PATH`. Symlink escape is defeated by canonicalisation, not by string checks. |
-| **C2** plaintext secrets | **DONE** | `FlutterSecureStorage` (`encryptedSharedPreferences`), one-time plaintext migration that deletes the old key, backup disabled, cleartext banned except `*.local` + loopback. ⚠️ raw-LAN-IP Home Assistant needs a config entry. |
+| **C2** plaintext secrets | **DONE** | `FlutterSecureStorage` (`^11.2.0`, Keystore-wrapped AES), one-time plaintext migration that deletes the old key, backup disabled, cleartext banned except `*.local` + loopback. ⚠️ raw-LAN-IP Home Assistant needs a config entry. |
 | **C3** Telegram implicit ownership | **DONE** | `/pair <code>` only; unknown chats silently ignored; 10-min TTL; constant-time compare; single use; **+ 5-attempt cap** added during review so a 6-digit code is not brute-forceable. |
 | **C4** debug-signed release | **DONE (scaffold)** | Real signing config from `key.properties`/env; loud `DEBUG-SIGNED` warning on fallback; minify commented out with reasons; `key.properties.example` has placeholders only. **No keystore was created** (out of scope). |
 | **C5** overlay JS string concat | **DONE** | Reply encoded as a JSON string literal (`JSONObject.quote`, U+2028/U+2029 escaped) instead of hand-rolled backslash escaping. |
@@ -144,6 +144,9 @@ physical device. Consequently **`flutter analyze`, `flutter test`,
    still work.
 3. **C2 adds a dependency** (`flutter_secure_storage`), so `pubspec.lock` changes
    on the first `flutter pub get`. The lockfile is not in this patch set.
+   ⚠️ **CI caught this one for real:** `^9.2.4` and `share_plus ^13.3.0` cannot
+   resolve (win32 `^5` vs `^6`). Bumped to `^11.2.0`, which also removed
+   `AndroidOptions.encryptedSharedPreferences`.
 4. **L8 makes CI honest, which means it can now go red.** `flutter analyze` on
    this 28 kLOC tree will very likely report pre-existing info/warning lints. The
    test step should pass for `widget_test.dart` after H10; any other currently
@@ -261,3 +264,35 @@ no-op since API 21 and that the real fixes are `MAX_TRAVERSE_DEPTH` and the
 - The `_ambiguousContactText` path in `task_executor` has never run inside an
   agent task.
 
+
+---
+
+## 8. CI verification (post-merge)
+
+After merging PR #1, `Build APK` ran on `main` (`2bfd82b`) and **failed at step 6,
+`Install dependencies` — `flutter pub get`**:
+
+```
+Because flutter_secure_storage >=9.1.1 <10.0.0-beta.1 depends on
+flutter_secure_storage_windows ^3.1.2 which depends on win32 ^5.0.0,
+flutter_secure_storage >=9.1.1 <10.0.0-beta.1 requires win32 ^5.0.0.
+And because share_plus >=13.1.0 depends on win32 ^6.0.1, ... is incompatible.
+So, because private_agent depends on both flutter_secure_storage ^9.2.4 and
+share_plus ^13.3.0, version solving failed.
+```
+
+This was a real defect in the patch set: **C2 introduced a dependency whose
+transitive constraint conflicts with `share_plus ^13.3.0`.** The local
+bracket-scan / grep / patch-reapplication checks could not catch it — only a
+resolver could.
+
+Fix (second follow-up commit): `flutter_secure_storage: ^11.2.0` with the
+default `AndroidOptions()`. v11 is not merely a version bump: it dropped
+`AndroidOptions.encryptedSharedPreferences` and `sharedPreferencesName`, so the
+previous call site would not have compiled. `read` / `write` / `delete` /
+`readAll` are unchanged, so `settings_service.dart` needed only the constructor
+argument.
+
+Lesson recorded: the "static only" claim in §1 is exactly as strong as the checks
+listed there. Dependency resolution, compilation and lint were outside them —
+and one of them bit immediately.

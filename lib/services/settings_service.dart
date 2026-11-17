@@ -36,10 +36,15 @@ class SettingsService extends ChangeNotifier {
   // Secrets (C2)
   // ------------------------------------------------------------------
 
-  /// Keystore-backed store for the two secrets. Values are cached in memory
+  /// Keystore-wrapped store for the two secrets. Values are cached in memory
   /// because every caller reads them through the synchronous getters below.
+  ///
+  /// v11 dropped `AndroidOptions.encryptedSharedPreferences` — the plugin now
+  /// keeps its own encrypted file and wraps the AES key in the Android
+  /// KeyStore, which is the stronger of the two schemes and is no longer
+  /// dependent on the deprecated androidx.security crypto artifact.
   static const FlutterSecureStorage _secure = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(),
   );
 
   static const String _secureApiKeyKey = 'ai_api_key';
