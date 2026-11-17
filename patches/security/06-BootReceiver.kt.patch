@@ -1,0 +1,45 @@
+diff --git a/android/app/src/main/kotlin/com/jarvis/dev/BootReceiver.kt b/android/app/src/main/kotlin/com/jarvis/dev/BootReceiver.kt
+index c8b3fca..e8ce82c 100644
+--- a/android/app/src/main/kotlin/com/jarvis/dev/BootReceiver.kt
++++ b/android/app/src/main/kotlin/com/jarvis/dev/BootReceiver.kt
+@@ -15,19 +15,35 @@ import android.content.Intent
+ class BootReceiver : BroadcastReceiver() {
+ 
+     companion object {
++        private const val TAG = "JARVIS_BOOT"
++
+         const val PREFS_NAME = "jarvis_native"
+         const val PREF_AUTOSTART = "agent_autostart"
+-    }
+ 
+-    override fun onReceive(context: Context, intent: Intent) {
+-        val action = intent.action ?: return
+-        val supported = listOf(
++        /**
++         * H9: the only actions this receiver reacts to. Every other action is
++         * dropped before any work happens.
++         *
++         * The receiver is declared `android:exported="false"` in the manifest,
++         * so third-party apps cannot deliver these intents either. Boot
++         * broadcasts are protected system broadcasts: they are delivered by the
++         * system to non-exported receivers, so `exported="false"` does not stop
++         * BOOT_COMPLETED from arriving.
++         */
++        private val ALLOWED_ACTIONS = setOf(
+             Intent.ACTION_BOOT_COMPLETED,
+             Intent.ACTION_LOCKED_BOOT_COMPLETED,
+             "android.intent.action.QUICKBOOT_POWERON",
+             "com.htc.intent.action.QUICKBOOT_POWERON"
+         )
+-        if (action !in supported) return
++    }
++
++    override fun onReceive(context: Context, intent: Intent) {
++        val action = intent.action ?: return
++        if (action !in ALLOWED_ACTIONS) {
++            android.util.Log.w(TAG, "Ignoring unexpected action: $action")
++            return
++        }
+ 
+         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+         if (!prefs.getBoolean(PREF_AUTOSTART, false)) return

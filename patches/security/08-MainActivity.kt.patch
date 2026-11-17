@@ -1,0 +1,368 @@
+diff --git a/android/app/src/main/kotlin/com/jarvis/dev/MainActivity.kt b/android/app/src/main/kotlin/com/jarvis/dev/MainActivity.kt
+index 1c83f78..e44ed25 100644
+--- a/android/app/src/main/kotlin/com/jarvis/dev/MainActivity.kt
++++ b/android/app/src/main/kotlin/com/jarvis/dev/MainActivity.kt
+@@ -44,6 +44,19 @@ import kotlin.math.sqrt
+  * Bridges Flutter -> [AgentAccessibilityService] via `com.jarvis.dev/accessibility`
+  * and continuous hands-free voice via `com.jarvis.dev/speech`.
+  */
++
++/**
++ * H3: whole-word wake-word matcher.
++ *
++ * Deliberately excludes the old `service` / `google` / `travis` / `davis` /
++ * `harvest` / `jarvi` entries: those matched ordinary conversation and armed
++ * the microphone uninvited.
++ */
++private val WAKE_WORD_PATTERN = Regex(
++    "\\b(?:jarvis|jervis|javis|jarves|jarvice|charvis|j\\.a\\.r\\.v\\.i\\.s)\\b",
++    RegexOption.IGNORE_CASE
++)
++
+ class MainActivity : FlutterActivity() {
+ 
+     companion object {
+@@ -96,8 +109,22 @@ class MainActivity : FlutterActivity() {
+     private var recognitionIntent: Intent? = null
+     private var isContinuousListening = false
+     private var isRestartPending = false
++    /**
++     * A7: whether the current recognition session was started by an explicit
++     * user action (button tap) rather than by the always-on loop. Auto-started
++     * sessions must contain the wake word before their transcript is treated as
++     * a command; a tapped session is always the user talking to the assistant.
++     */
++    private var isManualSession = false
+     private val mainHandler = Handler(Looper.getMainLooper())
+ 
++    /**
++     * H8: decoding a full-screen bitmap, JPEG-encoding it and base64-ing it are
++     * CPU/IO work. Running them on the MethodChannel thread (the platform main
++     * thread) caused jank and ANR risk during repeated captures.
++     */
++    private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
++
+     // Background Media / Music protection (avoids audio-focus theft that pauses YouTube / music players)
+     private var mediaSuppressionUntil: Long = 0L
+ 
+@@ -493,28 +520,78 @@ class MainActivity : FlutterActivity() {
+         )
+     }
+ 
+-    private fun getTargetFolder(name: String?): File {
+-        return when (name?.lowercase()?.trim()) {
+-            "documents", "document", "docs" -> {
++    /**
++     * C1: a file name that reaches this activity from Dart (and therefore from
++     * the LLM) is only ever allowed to be ONE path segment inside its target
++     * folder. Separators, "..", NUL bytes and absolute paths are rejected so
++     * `File(dir, name)` can never walk out of that folder.
++     */
++    private fun isSafeStorageSegment(name: String): Boolean {
++        val trimmed = name.trim()
++        if (trimmed.isEmpty()) return false
++        if (trimmed == "." || trimmed == "..") return false
++        if (trimmed.contains('/') || trimmed.contains('\\')) return false
++        if (trimmed.contains('\u0000')) return false
++        if (trimmed.contains("..")) return false
++        return true
++    }
++
++    /**
++     * C1: resolves [name] inside [dir] and proves with canonical paths that the
++     * result really is a child of [dir]. Returns null when the request would
++     * escape the folder (or cannot be canonicalised at all).
++     */
++    private fun resolveStorageChild(dir: File, name: String): File? {
++        if (!isSafeStorageSegment(name)) return null
++        return try {
++            val root = dir.canonicalFile
++            val child = File(root, name.trim()).canonicalFile
++            val prefix = root.path + File.separator
++            if (!child.path.startsWith(prefix)) null else child
++        } catch (_: Exception) {
++            null
++        }
++    }
++
++    /**
++     * C1: maps the Dart-side `folder` argument onto a real storage collection.
++     * Only known collection names, or a single safe directory name resolved
++     * inside shared storage, are accepted. Everything else returns null.
++     */
++    private fun getTargetFolder(name: String?): File? {
++        val known = when (name?.lowercase()?.trim()) {
++            "documents", "document", "docs" ->
+                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+-            }
+-            "pictures", "picture", "images", "photos" -> {
++            "pictures", "picture", "images", "photos" ->
+                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+-            }
+-            "music", "audio" -> {
++            "music", "audio" ->
+                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+-            }
+-            "dcim" -> {
++            "dcim" ->
+                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+-            }
+-            "download", "downloads", null, "" -> {
++            "download", "downloads", null, "" ->
+                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
++            else -> null
++        }
++        val dir = known ?: run {
++            val customName = name?.trim() ?: return null
++            if (!isSafeStorageSegment(customName)) return null
++            try {
++                val sharedRoot = Environment.getExternalStorageDirectory().canonicalFile
++                val custom = File(sharedRoot, customName).canonicalFile
++                if (!custom.path.startsWith(sharedRoot.path + File.separator)) {
++                    return null
++                }
++                custom
++            } catch (_: Exception) {
++                return null
+             }
+-            else -> {
+-                val custom = File(Environment.getExternalStorageDirectory(), name)
+-                if (custom.exists() || custom.mkdirs()) custom else Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+-            }
+-        }.apply { mkdirs() }
++        }
++        return try {
++            val canonical = dir.canonicalFile
++            if (canonical.exists() || canonical.mkdirs()) canonical else null
++        } catch (_: Exception) {
++            null
++        }
+     }
+ 
+     private fun obtainSpeechRecognizer(): SpeechRecognizer {
+@@ -526,23 +603,16 @@ class MainActivity : FlutterActivity() {
+         return SpeechRecognizer.createSpeechRecognizer(this)
+     }
+ 
+-    private fun containsWakeWord(text: String): Boolean {
+-        val lower = text.lowercase()
+-        return lower.contains("jarvis") ||
+-               lower.contains("javis") ||
+-               lower.contains("jervis") ||
+-               lower.contains("jarves") ||
+-               lower.contains("jarvice") ||
+-               lower.contains("charvis") ||
+-               lower.contains("travis") ||
+-               lower.contains("service") ||
+-               lower.contains("davis") ||
+-               lower.contains("davies") ||
+-               lower.contains("harvest") ||
+-               lower.contains("jarvi") ||
+-               lower.contains("google") ||
+-               lower.contains("j.a.r.v.i.s")
+-    }
++    /**
++     * H3: wake-word test.
++     *
++     * The old version used `String.contains`, so "customer **service**",
++     * "**Google** it", "**Travis**", "**harvest**" and "**Davis**" all armed the
++     * microphone during ordinary conversation. Whole-word matching plus a short
++     * phonetic allow-list removes that false-positive class.
++     */
++    private fun containsWakeWord(text: String): Boolean =
++        WAKE_WORD_PATTERN.containsMatchIn(text)
+ 
+     private fun safeCancelAndDestroy() {
+         try {
+@@ -554,6 +624,10 @@ class MainActivity : FlutterActivity() {
+     private val restartRunnable = Runnable {
+         isRestartPending = false
+         if (!isContinuousListening) return@Runnable
++        // A7: a restart is by definition an always-on session. Clearing the flag
++        // here is what stops one button tap from disabling the wake-word filter
++        // for the rest of the continuous session.
++        isManualSession = false
+ 
+         // If background music or media is actively playing on the phone,
+         // DO NOT start SpeechRecognizer. Calling startListening() forces Google Speech Services
+@@ -662,6 +736,12 @@ class MainActivity : FlutterActivity() {
+                         mapOf(
+                             "text" to best,
+                             "isFinal" to true,
++                            // H3: let Dart distinguish "wake word spoken" from
++                            // an ambient hypothesis without re-parsing.
++                            "hasWakeWord" to containsWakeWord(best),
++                            // A7: "tap" vs "always-on" origin, so Dart can
++                            // require the wake word only for ambient sessions.
++                            "manualSession" to isManualSession,
+                             "candidates" to (matches ?: emptyList<String>())
+                         )
+                     )
+@@ -688,6 +768,10 @@ class MainActivity : FlutterActivity() {
+                         mapOf(
+                             "text" to best,
+                             "isFinal" to false,
++                            "hasWakeWord" to containsWakeWord(best),
++                            // A7: "tap" vs "always-on" origin, so Dart can
++                            // require the wake word only for ambient sessions.
++                            "manualSession" to isManualSession,
+                             "candidates" to (matches ?: emptyList<String>())
+                         )
+                     )
+@@ -705,6 +789,10 @@ class MainActivity : FlutterActivity() {
+                         mapOf(
+                             "text" to best,
+                             "isFinal" to false,
++                            "hasWakeWord" to containsWakeWord(best),
++                            // A7: "tap" vs "always-on" origin, so Dart can
++                            // require the wake word only for ambient sessions.
++                            "manualSession" to isManualSession,
+                             "candidates" to (matches ?: emptyList<String>())
+                         )
+                     )
+@@ -733,6 +821,10 @@ class MainActivity : FlutterActivity() {
+             return
+         }
+ 
++        // A7: record the origin before any early return, so a tap always wins
++        // even when the recogniser is already running and we skip the restart.
++        isManualSession = manual
++
+         if (isContinuousListening && continuous && speechRecognizer != null) {
+             android.util.Log.i("JARVIS_VOICE", "startNativeListening: already listening continuously, skipping redundant restart")
+             return
+@@ -907,7 +999,17 @@ class MainActivity : FlutterActivity() {
+ 
+                     "captureFrame" -> {
+                         val quality = (call.argument<Number>("quality") ?: 85).toInt()
+-                        result.success(DeviceControlManager.captureFrameJpeg(this, quality))
++                        // H8: never decode/encode on the channel thread. The
++                        // reply is posted back to the main thread afterwards.
++                        ioExecutor.execute {
++                            val payload = try {
++                                DeviceControlManager.captureFrameJpeg(this, quality)
++                            } catch (e: Exception) {
++                                android.util.Log.e("JARVIS_CAPTURE", "captureFrame failed: $e")
++                                null
++                            }
++                            mainHandler.post { result.success(payload) }
++                        }
+                     }
+ 
+                     "getLocation" -> {
+@@ -927,12 +1029,20 @@ class MainActivity : FlutterActivity() {
+                     "sendSms" -> {
+                         val address = call.argument<String>("address") ?: ""
+                         val body = call.argument<String>("body") ?: ""
+-                        result.success(DeviceControlManager.sendSms(this, address, body))
++                        // H5: native refuses to send until the caller has a real
++                        // human confirmation and passes confirmed = true.
++                        val confirmed = call.argument<Boolean>("confirmed") ?: false
++                        result.success(
++                            DeviceControlManager.sendSms(this, address, body, confirmed)
++                        )
+                     }
+ 
+                     "placeCall" -> {
+                         val number = call.argument<String>("number") ?: ""
+-                        result.success(DeviceControlManager.placeCall(this, number))
++                        val confirmed = call.argument<Boolean>("confirmed") ?: false
++                        result.success(
++                            DeviceControlManager.placeCall(this, number, confirmed)
++                        )
+                     }
+ 
+                     "resolveContact" -> {
+@@ -1533,13 +1643,38 @@ class MainActivity : FlutterActivity() {
+ 
+                         try {
+                             val targetDir = getTargetFolder(folderName)
++                            if (targetDir == null) {
++                                result.error(
++                                    "INVALID_PATH",
++                                    "Illegal or inaccessible folder: \"$folderName\"",
++                                    null
++                                )
++                                return@setMethodCallHandler
++                            }
+                             when (action) {
+                                 "create", "write" -> {
+-                                    if (fileName.isEmpty()) {
++                                    if (fileName.isBlank()) {
+                                         result.error("INVALID_FILE", "File name cannot be empty", null)
+                                         return@setMethodCallHandler
+                                     }
+-                                    val file = File(targetDir, fileName)
++                                    // C1: fileName arrives from the LLM — never trust it.
++                                    val file = resolveStorageChild(targetDir, fileName)
++                                    if (file == null) {
++                                        result.error(
++                                            "INVALID_PATH",
++                                            "Illegal file name: \"$fileName\"",
++                                            null
++                                        )
++                                        return@setMethodCallHandler
++                                    }
++                                    if (file.isDirectory) {
++                                        result.error(
++                                            "INVALID_PATH",
++                                            "\"$fileName\" is a directory, not a file",
++                                            null
++                                        )
++                                        return@setMethodCallHandler
++                                    }
+                                     if (append && file.exists()) {
+                                         file.appendText(content)
+                                     } else {
+@@ -1555,11 +1690,27 @@ class MainActivity : FlutterActivity() {
+                                     ))
+                                 }
+                                 "read" -> {
+-                                    val file = File(targetDir, fileName)
++                                    val file = resolveStorageChild(targetDir, fileName)
++                                    if (file == null) {
++                                        result.error(
++                                            "INVALID_PATH",
++                                            "Illegal file name: \"$fileName\"",
++                                            null
++                                        )
++                                        return@setMethodCallHandler
++                                    }
+                                     if (!file.exists()) {
+                                         result.error("NOT_FOUND", "File $fileName not found in $folderName", null)
+                                         return@setMethodCallHandler
+                                     }
++                                    if (file.isDirectory) {
++                                        result.error(
++                                            "INVALID_PATH",
++                                            "\"$fileName\" is a directory, not a file",
++                                            null
++                                        )
++                                        return@setMethodCallHandler
++                                    }
+                                     val text = file.readText()
+                                     result.success(mapOf(
+                                         "success" to true,
+@@ -1585,8 +1736,20 @@ class MainActivity : FlutterActivity() {
+                                     ))
+                                 }
+                                 "delete" -> {
+-                                    val file = File(targetDir, fileName)
+-                                    val deleted = if (file.exists()) file.delete() else false
++                                    val file = resolveStorageChild(targetDir, fileName)
++                                    if (file == null) {
++                                        result.error(
++                                            "INVALID_PATH",
++                                            "Illegal file name: \"$fileName\"",
++                                            null
++                                        )
++                                        return@setMethodCallHandler
++                                    }
++                                    val deleted = if (file.exists() && !file.isDirectory) {
++                                        file.delete()
++                                    } else {
++                                        false
++                                    }
+                                     result.success(mapOf(
+                                         "success" to deleted,
+                                         "message" to if (deleted) "File $fileName deleted." else "File $fileName could not be deleted."

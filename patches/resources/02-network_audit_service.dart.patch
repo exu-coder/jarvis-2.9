@@ -1,0 +1,358 @@
+diff --git a/lib/services/network_audit_service.dart b/lib/services/network_audit_service.dart
+index 1bf00d6..636c2c9 100644
+--- a/lib/services/network_audit_service.dart
++++ b/lib/services/network_audit_service.dart
+@@ -25,17 +25,26 @@ class NetworkDevice {
+ }
+ 
+ /// Structured network security posture audit.
++///
++/// Every field holds a value that was actually observed. Anything the sweep
++/// could not measure stays `null` instead of being filled with a plausible
++/// looking placeholder — the UI renders "n/a" for those.
+ class NetworkAuditReport {
+   final String localIp;
+   final String subnetPrefix;
+   final int totalDevicesFound;
+   final List<NetworkDevice> devices;
+-  final int securityScore; // 0 to 100
++
++  /// 0–100, or `null` when the sweep found nothing to score.
++  final int? securityScore;
+   final List<String> vulnerabilities;
+-  final int pingLatencyMs;
++
++  /// Measured TCP round trip to the gateway in ms, or `null` when no gateway
++  /// port answered. (ICMP needs raw sockets, which Android apps cannot open.)
++  final int? pingLatencyMs;
+   final DateTime auditedAt;
+ 
+-  NetworkAuditReport({
++  const NetworkAuditReport({
+     required this.localIp,
+     required this.subnetPrefix,
+     required this.totalDevicesFound,
+@@ -57,46 +66,79 @@ class NetworkAuditService extends ChangeNotifier {
+ 
+   static const MethodChannel _channel = MethodChannel('com.jarvis.dev/accessibility');
+ 
++  /// Native channel, exposed so tests can stub the ARP-table call.
++  @visibleForTesting
++  static MethodChannel get channel => _channel;
++
+   bool _isAuditing = false;
+   NetworkAuditReport? _lastReport;
++  String? _lastError;
++  bool _cancelled = false;
+ 
+   bool get isAuditing => _isAuditing;
+   NetworkAuditReport? get lastReport => _lastReport;
+ 
++  /// Reason the most recent audit failed, or `null` when it succeeded.
++  String? get lastError => _lastError;
++
++  /// Abandons an in-flight sweep.
++  ///
++  /// Called when the audit dialog is closed so the 20-host port probe stops
++  /// instead of finishing work nobody is waiting for.
++  void cancelAudit() {
++    _cancelled = true;
++  }
++
++  /// Scores 0–100 from the findings of a completed sweep.
++  ///
++  /// Returns `null` for an empty sweep: no discovered hosts means the scan
++  /// could not see the network, which is not the same as a perfect score.
++  @visibleForTesting
++  static int? computeSecurityScore(List<NetworkDevice> devices) {
++    if (devices.isEmpty) return null;
++    var score = 100;
++    for (final d in devices) {
++      if (d.openPorts.contains(23)) score -= 20; // Telnet: plaintext admin
++      if (d.openPorts.contains(21)) score -= 10; // FTP: plaintext transfer
++      if (d.isCameraStream) score -= 15; // unauthenticated RTSP video
++      if (d.openPorts.contains(22)) score -= 5; // SSH reachable from the LAN
++    }
++    return score.clamp(0, 100);
++  }
++
+   /// Audits the local Wi-Fi network and active subnet.
+-  Future<NetworkAuditReport> auditNetwork() async {
++  ///
++  /// Returns `null` when the sweep could not run or could not resolve a local
++  /// address; the reason is then available via [lastError]. Callers must
++  /// surface that instead of inventing telemetry.
++  Future<NetworkAuditReport?> auditNetwork({
++    @visibleForTesting String? localIpOverride,
++  }) async {
+     _isAuditing = true;
++    _cancelled = false;
++    _lastError = null;
+     notifyListeners();
+ 
+     try {
+-      // 1. Get local device IP
+-      String localIp = '192.168.1.100';
+-      try {
+-        final interfaces = await NetworkInterface.list(
+-          type: InternetAddressType.IPv4,
+-          includeLoopback: false,
++      // 1. Get local device IP (real interface enumeration only).
++      final localIp = localIpOverride ?? await _resolveLocalIp();
++      if (localIp == null) {
++        return _fail(
++          'No local IPv4 address. Join a Wi-Fi network and retry the audit.',
+         );
+-        for (final iface in interfaces) {
+-          for (final addr in iface.addresses) {
+-            if (!addr.isLoopback && !addr.address.startsWith('10.0.2.')) {
+-              localIp = addr.address;
+-              break;
+-            }
+-          }
+-        }
+-      } catch (_) {}
++      }
+ 
+       final subnetParts = localIp.split('.');
+-      final prefix = subnetParts.length == 4
+-          ? '${subnetParts[0]}.${subnetParts[1]}.${subnetParts[2]}'
+-          : '192.168.1';
++      if (subnetParts.length != 4) {
++        return _fail('Unusable local address: $localIp');
++      }
++      final prefix = '${subnetParts[0]}.${subnetParts[1]}.${subnetParts[2]}';
+ 
+       // 2. Fetch native ARP table from /proc/net/arp
+       final arpList = await _fetchNativeArpTable();
+ 
+       // 3. Probes candidates on subnet concurrently
+       final discoveredDevices = <NetworkDevice>[];
+-      final pingStart = DateTime.now();
+ 
+       // Scan gateway + common IPs + ARP entries
+       final ipsToScan = <String>{
+@@ -112,6 +154,7 @@ class NetworkAuditService extends ChangeNotifier {
+       }
+ 
+       final scanFutures = ipsToScan.map((ip) async {
++        if (_cancelled) return;
+         final openPorts = await _scanPorts(ip);
+         final isSelf = ip == localIp;
+         final isGw = ip == '$prefix.1';
+@@ -140,86 +183,121 @@ class NetworkAuditService extends ChangeNotifier {
+       });
+ 
+       await Future.wait(scanFutures);
++      if (_cancelled) return null;
+ 
+-      final pingLatency = DateTime.now().difference(pingStart).inMilliseconds.clamp(4, 120);
+-
+-      // 4. Vulnerability & security score calculation
++      // 4. Vulnerability list + score, both derived from what was found.
+       final vulnerabilities = <String>[];
+-      int score = 100;
+-
+       for (final d in discoveredDevices) {
+         if (d.openPorts.contains(23)) {
+           vulnerabilities.add('Unencrypted Telnet (port 23) active on ${d.ip}');
+-          score -= 20;
+         }
+         if (d.openPorts.contains(21)) {
+           vulnerabilities.add('Plaintext FTP (port 21) active on ${d.ip}');
+-          score -= 10;
+         }
+         if (d.isCameraStream) {
+           vulnerabilities.add('Unencrypted RTSP Video Surveillance feed on ${d.ip}:554');
+-          score -= 15;
+         }
+       }
+ 
+       if (vulnerabilities.isEmpty) {
+-        vulnerabilities.add('No critical unencrypted management ports exposed.');
++        vulnerabilities.add(
++          discoveredDevices.isEmpty
++              ? 'No hosts answered the sweep — nothing could be assessed.'
++              : 'No critical unencrypted management ports exposed.',
++        );
+       }
+ 
+-      _lastReport = NetworkAuditReport(
++      final report = NetworkAuditReport(
+         localIp: localIp,
+         subnetPrefix: '$prefix.0/24',
+         totalDevicesFound: discoveredDevices.length,
+-        devices: discoveredDevices,
+-        securityScore: score.clamp(35, 100),
++        devices: List<NetworkDevice>.unmodifiable(discoveredDevices),
++        securityScore: computeSecurityScore(discoveredDevices),
+         vulnerabilities: vulnerabilities,
+-        pingLatencyMs: pingLatency,
++        pingLatencyMs: await _measureGatewayLatency(prefix),
+         auditedAt: DateTime.now(),
+       );
+ 
+-      return _lastReport!;
+-    } catch (_) {
+-      // Return baseline audit report
+-      _lastReport = NetworkAuditReport(
+-        localIp: '192.168.1.105',
+-        subnetPrefix: '192.168.1.0/24',
+-        totalDevicesFound: 3,
+-        devices: [
+-          NetworkDevice(
+-            ip: '192.168.1.1',
+-            mac: '00:1A:2B:3C:4D:5E',
+-            vendor: 'Cisco / Linksys Gateway',
+-            hostname: 'Wi-Fi Router',
+-            openPorts: [80, 443],
+-            isGateway: true,
+-          ),
+-          NetworkDevice(
+-            ip: '192.168.1.105',
+-            mac: 'Local-Device',
+-            vendor: 'Motorola Mobility',
+-            hostname: 'J.A.R.V.I.S. Host Device',
+-            openPorts: [],
+-          ),
+-        ],
+-        securityScore: 95,
+-        vulnerabilities: ['Subnet firewall active and secured.'],
+-        pingLatencyMs: 14,
+-        auditedAt: DateTime.now(),
+-      );
+-      return _lastReport!;
++      _lastReport = report;
++      return report;
++    } catch (e, st) {
++      // A failed audit stays a failure. Returning a hard-coded "report" here
++      // used to present a fabricated LAN (192.168.x addresses, 14 ms latency)
++      // as live telemetry.
++      return _fail('Network audit failed: $e', st);
+     } finally {
+       _isAuditing = false;
+-      notifyListeners();
++      if (!_cancelled) notifyListeners();
+     }
+   }
+ 
++  /// Records a failure, clears any stale report and returns `null`.
++  NetworkAuditReport? _fail(String message, [StackTrace? st]) {
++    debugPrint('[NetworkAuditService] $message');
++    if (st != null) debugPrint('[NetworkAuditService] $st');
++    _lastError = message;
++    _lastReport = null;
++    return null;
++  }
++
++  /// First non-loopback IPv4 address, or `null` when the device has no LAN.
++  Future<String?> _resolveLocalIp() async {
++    try {
++      final interfaces = await NetworkInterface.list(
++        type: InternetAddressType.IPv4,
++        includeLoopback: false,
++      );
++      for (final iface in interfaces) {
++        for (final addr in iface.addresses) {
++          // 10.0.2.x is the emulator's NAT link, never a real LAN.
++          if (!addr.isLoopback && !addr.address.startsWith('10.0.2.')) {
++            return addr.address;
++          }
++        }
++      }
++      debugPrint('[NetworkAuditService] No non-loopback IPv4 interface found.');
++    } catch (e) {
++      debugPrint('[NetworkAuditService] NetworkInterface.list failed: $e');
++    }
++    return null;
++  }
++
++  /// Times a TCP connect to the router's usual management ports.
++  ///
++  /// Returns `null` when no port answers, rather than a synthetic latency.
++  Future<int?> _measureGatewayLatency(String prefix) async {
++    final gateway = '$prefix.1';
++    for (final port in const [443, 80, 22]) {
++      Socket? socket;
++      final stopwatch = Stopwatch()..start();
++      try {
++        socket = await Socket.connect(
++          gateway,
++          port,
++          timeout: const Duration(milliseconds: 400),
++        );
++        stopwatch.stop();
++        return stopwatch.elapsedMilliseconds;
++      } catch (e) {
++        debugPrint('[NetworkAuditService] Gateway probe $gateway:$port failed: $e');
++      } finally {
++        socket?.destroy();
++      }
++    }
++    return null;
++  }
++
+   Future<List<Map<String, String>>> _fetchNativeArpTable() async {
+     try {
+       final res = await _channel.invokeListMethod<Map>('getNetworkArpTable');
+       if (res != null) {
+         return res.map((m) => m.map((k, v) => MapEntry(k.toString(), v.toString()))).toList();
+       }
+-    } catch (_) {}
++    } catch (e) {
++      // No ARP table (restricted ROM, or channel missing): the sweep still runs,
++      // but the reason devices may look unnamed is worth one log line.
++      debugPrint('[NetworkAuditService] ARP table unavailable: $e');
++    }
+     return [];
+   }
+ 
+@@ -232,7 +310,11 @@ class NetworkAuditService extends ChangeNotifier {
+         final socket = await Socket.connect(ip, port, timeout: const Duration(milliseconds: 250));
+         socket.destroy();
+         open.add(port);
+-      } catch (_) {}
++      } catch (_) {
++        // A13: intentionally silent. A closed port *is* the normal path for
++        // this probe (6 of them throw per scan), so logging each one would bury
++        // real errors. Kept as an empty catch by decision, not by oversight.
++      }
+     });
+ 
+     await Future.wait(probes);
+@@ -240,7 +322,7 @@ class NetworkAuditService extends ChangeNotifier {
+   }
+ 
+   String _resolveVendor(String mac, {bool isSelf = false, bool isGw = false}) {
+-    if (isSelf) return 'Motorola / Android Client';
++    if (isSelf) return 'This Device';
+     if (isGw) return 'Broadband Gateway / Router';
+ 
+     final cleanMac = mac.toUpperCase().replaceAll(':', '').replaceAll('-', '');
+@@ -256,16 +338,25 @@ class NetworkAuditService extends ChangeNotifier {
+   }
+ 
+   /// Spoken Stark telemetry report of the network audit.
++  ///
++  /// Returns an honest failure sentence when the sweep produced nothing —
++  /// never a narration of invented data.
+   Future<String> getSpokenAuditReport() async {
+     final report = await auditNetwork();
++    if (report == null) {
++      return 'Network audit incomplete, sir. ${_lastError ?? 'The local subnet did not respond.'}';
++    }
++
+     final count = report.totalDevicesFound;
+     final score = report.securityScore;
+     final ping = report.pingLatencyMs;
+ 
+     final cameras = report.devices.where((d) => d.isCameraStream).length;
+     final cameraStr = cameras > 0 ? ' Discovered $cameras active IP camera streams.' : '';
++    final pingStr = ping == null ? 'unavailable' : '$ping milliseconds';
++    final scoreStr = score == null ? 'not scoreable' : '$score out of 100';
+ 
+-    return 'Network cyber audit complete, sir. $count connected devices detected on local subnet ${report.subnetPrefix}. Gateway ping latency is $ping milliseconds. Overall security score is $score out of 100.$cameraStr All shields operational.';
++    return 'Network cyber audit complete, sir. $count connected devices detected on local subnet ${report.subnetPrefix}. Gateway round-trip is $pingStr. Overall security score is $scoreStr.$cameraStr';
+   }
+ }
+ 

@@ -1,0 +1,176 @@
+diff --git a/lib/screens/settings/settings_screen.dart b/lib/screens/settings/settings_screen.dart
+index acdd640..4f14cdf 100644
+--- a/lib/screens/settings/settings_screen.dart
++++ b/lib/screens/settings/settings_screen.dart
+@@ -157,6 +157,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
+       );
+   }
+ 
++  /// C3: shows the one-time pairing code. A chat is added only by sending
++  /// `/pair <code>` to the bot from that chat.
++  Future<void> _showPairCodeDialog() async {
++    final code = await _settings.issueTelegramPairCode();
++    if (!mounted) return;
++    await showDialog<void>(
++      context: context,
++      builder: (ctx) => AlertDialog(
++        backgroundColor: const Color(0xFF11141A),
++        title: const Text(
++          'PAIR A TELEGRAM CHAT',
++          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.6),
++        ),
++        content: Column(
++          mainAxisSize: MainAxisSize.min,
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            const Text(
++              'In the Telegram chat you want to authorise, send:',
++              style: TextStyle(fontSize: 12),
++            ),
++            const SizedBox(height: 10),
++            SelectableText(
++              '/pair $code',
++              style: const TextStyle(
++                fontSize: 20,
++                fontFamily: 'monospace',
++                fontWeight: FontWeight.w700,
++                letterSpacing: 2,
++                color: Color(0xFF00E5FF),
++              ),
++            ),
++            const SizedBox(height: 12),
++            const Text(
++              'The code expires in 10 minutes, works once, and is destroyed '
++              'after 5 wrong attempts. Never share it — anyone who redeems it '
++              'can control this device.',
++              style: TextStyle(fontSize: 11, height: 1.4),
++            ),
++          ],
++        ),
++        actions: [
++          TextButton(
++            onPressed: () => Navigator.of(ctx).pop(),
++            child: const Text('DONE'),
++          ),
++        ],
++      ),
++    );
++  }
++
++  /// A6: kills the bridge completely — paired chats, pairing code and the bot
++  /// token. Telegram has no API to rotate a token, so the user must also
++  /// /revoke it in @BotFather before issuing a new one.
++  Future<void> _revokeTelegramAccess() async {
++    await _settings.revokeTelegramAccess();
++    _telegram.stop();
++    _tokenController.clear();
++    _chatsController.clear();
++    if (!mounted) return;
++    setState(() {});
++    ScaffoldMessenger.of(context)
++      ..hideCurrentSnackBar()
++      ..showSnackBar(
++        SnackBar(
++          content: const Text(
++            'Telegram access revoked: chats, pairing code and token cleared. '
++            'Send /revoke to @BotFather to invalidate the old token server-side.',
++          ),
++          duration: const Duration(seconds: 6),
++          behavior: SnackBarBehavior.floating,
++          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
++        ),
++      );
++  }
++
+   Future<void> _saveAiSettings() async {
+     await _settings.setBaseUrl(_baseUrlController.text);
+     await _settings.setApiKey(_apiKeyController.text);
+@@ -413,8 +489,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
+     required bool enabled,
+     required VoidCallback onTap,
+     IconData icon = Icons.save_outlined,
++    bool destructive = false,
+   }) {
+-    final cyan = AppTheme.hudCyan;
++    final cyan = destructive ? AppTheme.danger : AppTheme.hudCyan;
+     final active = enabled;
+     return GestureDetector(
+       onTap: active ? onTap : null,
+@@ -895,7 +972,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
+           GlassTextField(
+             controller: _chatsController,
+             labelText: 'Allowed Chat IDs',
+-            hintText: 'Comma-separated (leave empty for auto-pairing)',
++            hintText: 'Comma-separated (empty = pair from Telegram with /pair)',
+             prefixIcon: const Icon(Icons.group_outlined, size: 20),
+           ),
+           const SizedBox(height: 14),
+@@ -905,6 +982,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
+             onTap: _saveTelegramSettings,
+             icon: Icons.send_outlined,
+           ),
++          const SizedBox(height: 10),
++          // C3: a chat can only be added by redeeming a code issued on the
++          // device. The old "first chat becomes owner" path is gone, so the UI
++          // has to show the code.
++          Row(
++            children: [
++              Expanded(
++                child: _actionButton(
++                  label: 'Pair a chat',
++                  enabled: _settings.telegramToken.isNotEmpty,
++                  onTap: _showPairCodeDialog,
++                  icon: Icons.qr_code_2_rounded,
++                ),
++              ),
++              const SizedBox(width: 10),
++              Expanded(
++                child: _actionButton(
++                  label: 'Revoke access',
++                  enabled: _settings.telegramToken.isNotEmpty ||
++                      _settings.telegramAllowedChats.isNotEmpty,
++                  onTap: _revokeTelegramAccess,
++                  icon: Icons.gpp_bad_outlined,
++                  destructive: true,
++                ),
++              ),
++            ],
++          ),
+           const SizedBox(height: 14),
+           if (owner.isNotEmpty)
+             Container(
+@@ -952,21 +1056,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
+                       ),
+                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                     ),
+-                    icon: const Icon(Icons.link_off_rounded, size: 15),
+-                    label: const Text('Unpair', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+-                    onPressed: () async {
+-                      await _settings.setTelegramOwnerChatId('');
+-                      if (!mounted) return;
+-                      setState(() {});
+-                      ScaffoldMessenger.of(context).showSnackBar(
+-                        SnackBar(
+-                          content: const Text('Telegram owner pairing unlinked'),
+-                          duration: const Duration(seconds: 2),
+-                          behavior: SnackBarBehavior.floating,
+-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+-                        ),
+-                      );
+-                    },
++                    icon: const Icon(Icons.gpp_bad_outlined, size: 15),
++                    label: const Text('Revoke all', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
++                    onPressed: _revokeTelegramAccess,
+                   ),
+                 ],
+               ),
+@@ -996,7 +1088,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
+                           ),
+                         ),
+                         Text(
+-                          'Send /start or /pair to your bot in Telegram to auto-pair, or enter Chat IDs above.',
++                          'No chat is authorised. Press "Pair a chat", then send '
++                          '/pair <code> to the bot from the chat you want to allow.',
+                           style: TextStyle(
+                             fontSize: 11,
+                             color: Theme.of(context).colorScheme.onSurfaceVariant,

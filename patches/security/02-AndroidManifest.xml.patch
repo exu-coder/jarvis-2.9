@@ -1,0 +1,255 @@
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 98991fe..9cd20f8 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -1,6 +1,13 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:tools="http://schemas.android.com/tools">
+ 
++    <!-- ==================================================================
++         C6: this list is pruned to permissions that the code in lib/ and
++         android/app/src/main/kotlin/ actually consumes. Each entry below has a
++         call site; anything without one was removed (see
++         patches/security/NOTES.md for the full evidence table).
++         ================================================================== -->
++
+     <!-- ========== Network and Connectivity ========== -->
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+@@ -9,21 +16,18 @@
+     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+         android:usesPermissionFlags="neverForLocation" />
+-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+ 
+-    <!-- ========== Bluetooth ========== -->
++    <!-- ========== Bluetooth (ConnectedDeviceService) ========== -->
+     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+         android:usesPermissionFlags="neverForLocation" />
+     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+ 
+-    <!-- ========== Location ========== -->
++    <!-- ========== Location (LocationService foreground service) ========== -->
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+-    <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
+ 
+     <!-- ========== Camera and Microphone ========== -->
+     <uses-permission android:name="android.permission.CAMERA" />
+@@ -37,13 +41,13 @@
+     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:ignore="ScopedStorage" />
++    <!-- Required by the manageStorageFile bridge: it writes real files into
++         shared storage collections, which scoped storage cannot do. -->
+     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+-    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+ 
+     <!-- ========== Contacts and Calendar ========== -->
+     <uses-permission android:name="android.permission.READ_CONTACTS" />
+     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+-    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+     <uses-permission android:name="android.permission.READ_CALENDAR" />
+     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+ 
+@@ -52,19 +56,16 @@
+     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+     <uses-permission android:name="android.permission.CALL_PHONE" />
+     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
++    <!-- permissionGroups["callLog"] in DeviceControlManager still probes these
++         two; do not remove without removing the group and its UI row. -->
+     <uses-permission android:name="android.permission.READ_CALL_LOG" />
+     <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+-    <uses-permission android:name="android.permission.ADD_VOICEMAIL" />
+     <uses-permission android:name="android.permission.SEND_SMS" />
+     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+     <uses-permission android:name="android.permission.READ_SMS" />
+-    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+-    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+-    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+ 
+     <!-- ========== Sensors and Activity ========== -->
+     <uses-permission android:name="android.permission.BODY_SENSORS" />
+-    <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND" />
+     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+ 
+     <!-- ========== Notifications and Alarms ========== -->
+@@ -73,59 +74,36 @@
+     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+     <uses-permission android:name="android.permission.WAKE_LOCK" />
+     <uses-permission android:name="android.permission.VIBRATE" />
+-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+-    <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
+     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+ 
+-    <!-- ========== Foreground Service Core (Android 14+/15) ========== -->
++    <!-- ========== Foreground Service Core (Android 14+/15) ==========
++         Only the types actually passed to startForeground() are declared:
++         dataSync (AgentService), mediaProjection (ScreenCaptureService),
++         location (LocationService), connectedDevice
++         (ConnectedDeviceService), specialUse (BubbleOverlayService and the
++         flutter_overlay_window service). -->
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
+ 
+     <!-- ========== Background Survival ========== -->
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+-    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+-    <uses-permission android:name="android.permission.REORDER_TASKS" />
+ 
+     <!-- ========== Special Access (Manual Toggle) ========== -->
+     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+-    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+-    <uses-permission android:name="android.permission.NFC" />
+-    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+-    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+-    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+-    <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
++    <!-- permissionReport() reports this capability; keep in sync with the code. -->
+     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+     <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+ 
+-    <!-- ========== Screen Awareness ========== -->
+-    <!-- NOTE: DETECT_SCREEN_RECORDING does NOT exist — only DETECT_SCREEN_CAPTURE is real. -->
+-    <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
+-
+-    <!-- ========== Biometrics and Media ========== -->
+-    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+-
+-    <!-- ========== Device Radios ========== -->
+-    <uses-permission android:name="android.permission.TRANSMIT_IR" />
+-    <uses-permission android:name="android.permission.UWB_RANGING" />
+-
+     <!-- ========== Hardware Features ========== -->
+     <uses-feature android:name="android.hardware.camera" android:required="false" />
+     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+@@ -134,17 +112,37 @@
+     <uses-feature android:name="android.hardware.location" android:required="false" />
+     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+-    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+ 
++    <!-- ==================================================================
++         C2: the app stores an API key and a bot token. Nothing may leave the
++         device through cloud backup or device-to-device transfer, so backups
++         are disabled for both the legacy (fullBackupContent) and the
++         Android 12+ (dataExtractionRules) mechanisms.
++
++         C6: cleartext HTTP is off by default. The only plaintext endpoints
++         this app talks to are on the LAN (Home Assistant on *.local /
++         localhost), and they are allow-listed in
++         res/xml/network_security_config.xml. A Home Assistant instance
++         addressed by raw LAN IP must be added to that file (or moved to
++         https) — see patches/security/NOTES.md.
++         ================================================================== -->
+     <application
+         android:label="𝐉.𝐀.𝐑.𝐕.𝐈.𝐒"
+         android:name="${applicationName}"
+-        android:usesCleartextTraffic="true"
++        android:allowBackup="false"
++        android:fullBackupContent="false"
++        android:dataExtractionRules="@xml/data_extraction_rules"
++        android:usesCleartextTraffic="false"
++        android:networkSecurityConfig="@xml/network_security_config"
+         android:requestLegacyExternalStorage="true"
+         android:icon="@mipmap/ic_launcher"
+         tools:targetApi="35">
+ 
+-        <!-- ========== Main Activity ========== -->
++        <!-- ========== Main Activity ==========
++             exported=true is required for the LAUNCHER intent-filter. It
++             exposes no other intent-filter and reads no external data from the
++             intent (all entry points come over the Flutter MethodChannels, which
++             are process-local), so nothing sensitive can be injected. -->
+         <activity
+             android:name=".MainActivity"
+             android:exported="true"
+@@ -204,7 +202,12 @@
+         </service>
+ 
+         <!-- ========== Accessibility service: reads screen hierarchy and
+-             performs gestures (tap, swipe, scroll, type) on behalf of the user. ========== -->
++             performs gestures (tap, swipe, scroll, type) on behalf of the user.
++             C6: exported=true is REQUIRED — the system binds this component and
++             starts it on boot. The BIND_ACCESSIBILITY_SERVICE permission is held
++             only by the system, so third-party apps cannot bind it.
++             M12: accessibility + notification listener + device admin together
++             are the canonical stalkerware signature. Gated behind UI. ========== -->
+         <service
+             android:name=".AgentAccessibilityService"
+             android:exported="true"
+@@ -228,7 +231,10 @@
+                 android:value="Shows the 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 floating control bubble and transcript panel on top of other apps while the agent performs UI automation." />
+         </service>
+ 
+-        <!-- Notification Listener for live email & SMS inbox triage -->
++        <!-- Notification Listener for live email & SMS inbox triage.
++             C6: exported=true is REQUIRED — NotificationListenerService is bound
++             by the system; BIND_NOTIFICATION_LISTENER_SERVICE keeps third-party
++             apps out. ========== -->
+         <service
+             android:name=".InboxNotificationListenerService"
+             android:label="𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 Email &amp; SMS Listener"
+@@ -242,11 +248,15 @@
+                 android:value="conversations|alerting|silent|ongoing" />
+         </service>
+ 
+-        <!-- ========== Boot receiver (restarts background agent after reboot) ========== -->
++        <!-- ========== Boot receiver (restarts background agent after reboot) ==========
++             H9: exported=false. BOOT_COMPLETED is a protected system broadcast
++             and is delivered to non-exported receivers, so autostart keeps
++             working while other apps can no longer forge QUICKBOOT_POWERON.
++             BootReceiver.onReceive() also enforces an explicit action allow-list. -->
+         <receiver
+             android:name=".BootReceiver"
+             android:enabled="true"
+-            android:exported="true">
++            android:exported="false">
+             <intent-filter>
+                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+@@ -255,7 +265,10 @@
+             </intent-filter>
+         </receiver>
+ 
+-        <!-- ========== Device administrator (screen lock / policy actions) ========== -->
++        <!-- ========== Device administrator (screen lock / policy actions) ==========
++             C6: exported=true is REQUIRED — the system (DevicePolicyManager)
++             delivers DEVICE_ADMIN_ENABLED to it; BIND_DEVICE_ADMIN keeps other
++             apps out. ========== -->
+         <receiver
+             android:name=".JarvisDeviceAdminReceiver"
+             android:permission="android.permission.BIND_DEVICE_ADMIN"
+@@ -281,7 +294,9 @@
+                 android:resource="@xml/file_paths" />
+         </provider>
+ 
+-        <!-- Shizuku provider (optional privileged commands) -->
++        <!-- Shizuku provider (optional privileged commands). Exported and guarded
++             by INTERACT_ACROSS_USERS_FULL because Shizuku itself connects to it;
++             this is the layout Shizuku documents. -->
+         <provider
+             android:name="rikka.shizuku.ShizukuProvider"
+             android:authorities="${applicationId}.shizuku"

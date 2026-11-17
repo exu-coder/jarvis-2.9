@@ -1,0 +1,83 @@
+diff --git a/lib/services/task_executor.dart b/lib/services/task_executor.dart
+index b63e8a4..3b11c71 100644
+--- a/lib/services/task_executor.dart
++++ b/lib/services/task_executor.dart
+@@ -12,6 +12,7 @@ import '../models/task_history_entry.dart';
+ import '../models/task_step.dart';
+ import 'ai_service.dart';
+ import 'app_launcher_service.dart';
++import 'contact_disambiguation_service.dart';
+ import 'device_control_service.dart';
+ import 'recovery_engine.dart';
+ import 'screen_automation_service.dart';
+@@ -572,6 +573,16 @@ class TaskExecutor extends ChangeNotifier {
+   // Native device-control steps
+   // ------------------------------------------------------------------
+ 
++  /// A1: the message shown when a name maps to several numbers and the agent
++  /// pipeline (which has no conversation) refuses to pick one.
++  String _ambiguousContactText(String query, Map<String, dynamic> contact) {
++    final matches =
++        ContactDisambiguationService.candidatesFromResult(contact);
++    final tails = matches.map((c) => c.lastThree).where((d) => d.isNotEmpty);
++    return 'Ambiguous contact "$query": ${matches.length} numbers match '
++        '(ending in ${tails.join(', ')}). Refusing to guess — ask which one.';
++  }
++
+   Future<bool> _sendSmsStep(TaskStep step) async {
+     var to = step.stringParam('to') ?? '';
+     final body = step.stringParam('body') ?? '';
+@@ -582,6 +593,11 @@ class TaskExecutor extends ChangeNotifier {
+     String? display;
+     if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(to)) {
+       final contact = await _device.resolveContact(to);
++      // A1: never guess between same-name entries.
++      if (contact['requiresChoice'] == true) {
++        _log(ChatMessage.error(_ambiguousContactText(to, contact)));
++        return false;
++      }
+       if (contact['success'] == true) {
+         final c = Map<String, dynamic>.from(contact['contact'] as Map);
+         to = c['number']?.toString() ?? '';
+@@ -597,6 +613,15 @@ class TaskExecutor extends ChangeNotifier {
+       _log(ChatMessage.system('SMS sent to ${display ?? to}.'));
+       return true;
+     }
++    // H5: SMS is behind a native confirmation gate. Without a wired
++    // DeviceControlService.confirmAction the native side only returns a preview,
++    // so say "needs confirmation" instead of the misleading "failed".
++    if (res['requiresConfirmation'] == true) {
++      _log(ChatMessage.system(
++        'SMS needs your confirmation: ${res['preview'] ?? to}',
++      ));
++      return false;
++    }
+     _log(ChatMessage.error('SMS failed: ${res['message']}'));
+     return false;
+   }
+@@ -610,6 +635,11 @@ class TaskExecutor extends ChangeNotifier {
+     String? display;
+     if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(number)) {
+       final contact = await _device.resolveContact(number);
++      // A1: never guess between same-name entries.
++      if (contact['requiresChoice'] == true) {
++        _log(ChatMessage.error(_ambiguousContactText(number, contact)));
++        return false;
++      }
+       if (contact['success'] == true) {
+         final c = Map<String, dynamic>.from(contact['contact'] as Map);
+         number = c['number']?.toString() ?? '';
+@@ -625,6 +655,13 @@ class TaskExecutor extends ChangeNotifier {
+       _log(ChatMessage.system('Calling ${display ?? number}.'));
+       return true;
+     }
++    // H5: same confirmation gate as SMS — never report a preview as a failure.
++    if (res['requiresConfirmation'] == true) {
++      _log(ChatMessage.system(
++        'Call needs your confirmation: ${res['preview'] ?? number}',
++      ));
++      return false;
++    }
+     _log(ChatMessage.error('Call failed: ${res['message']}'));
+     return false;
+   }

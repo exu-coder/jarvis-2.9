@@ -1,0 +1,140 @@
+diff --git a/lib/services/voice_service.dart b/lib/services/voice_service.dart
+index 4fe9880..62b1ba8 100644
+--- a/lib/services/voice_service.dart
++++ b/lib/services/voice_service.dart
+@@ -33,6 +33,18 @@ class VoiceService {
+   void Function(String status)? onSpeechStatus;
+   void Function(String words, bool isFinal, List<String> candidates)? onSpeechResult;
+ 
++  /// A7: true when the transcript that produced the last [onSpeechResult] call
++  /// contained the wake word. Set immediately before the callback fires, so a
++  /// listener can read it synchronously.
++  bool lastResultHadWakeWord = false;
++
++  /// A7: true when the last session was started by an explicit user action
++  /// (button tap) rather than by the always-on loop. Native value wins; the
++  /// Dart-side flag is the fallback when the payload omits the field.
++  bool lastSessionWasManual = false;
++
++  bool _manualRequested = false;
++
+   bool get isListening => _listening;
+   bool get isAvailable => _speechReady;
+ 
+@@ -47,6 +59,12 @@ class VoiceService {
+                   ?.map((e) => e.toString())
+                   .toList() ??
+               (text.isNotEmpty ? [text] : <String>[]);
++          // A7: origin + wake-word flag travel with the transcript. Set before
++          // the callback so listeners can read them synchronously.
++          lastResultHadWakeWord = args?['hasWakeWord'] == true ||
++              candidates.any((c) => c.toLowerCase().contains('jarvis'));
++          lastSessionWasManual =
++              (args?['manualSession'] as bool?) ?? _manualRequested;
+           if (text.isNotEmpty || candidates.isNotEmpty) {
+             onSpeechResult?.call(text, isFinal, candidates);
+           }
+@@ -148,7 +166,11 @@ class VoiceService {
+                 }
+               }
+             }
+-          } catch (_) {}
++          } catch (e) {
++            // A13: the profile voice could not be applied — TTS still works,
++            // just with the platform default voice. Worth knowing about.
++            debugPrint('[VoiceService] initTts voice selection failed: $e');
++          }
+           break;
+       }
+ 
+@@ -205,6 +227,8 @@ class VoiceService {
+   }) async {
+     if (!await initSpeech()) return false;
+     onSpeechResult = onResult;
++    _manualRequested = manual;
++    lastSessionWasManual = manual;
+     if (_listening && continuous && !manual) {
+       // Already running continuous listening loop
+       return true;
+@@ -234,7 +258,11 @@ class VoiceService {
+       await _nativeSpeechChannel.invokeMethod('notifyMediaStarted', {
+         'durationMs': duration.inMilliseconds,
+       });
+-    } catch (_) {}
++    } catch (e) {
++      // A13: without this the recogniser can steal audio focus from media and
++      // the user hears YouTube/Spotify pause for no apparent reason.
++      debugPrint('[VoiceService] notifyMediaPlaybackStarted failed: $e');
++    }
+   }
+ 
+   /// Stops speech recognition immediately.
+@@ -244,7 +272,11 @@ class VoiceService {
+     onListeningChanged?.call(false);
+     try {
+       await _nativeSpeechChannel.invokeMethod('stopListening');
+-    } catch (_) {}
++    } catch (e) {
++      // A13: a failed stop leaves the microphone running — the single most
++      // privacy-relevant silent failure in this service.
++      debugPrint('[VoiceService] stopListening native call failed: $e');
++    }
+   }
+ 
+   /// Sanitizes text so speech synthesizers pronounce acronyms like Jarvis naturally
+@@ -281,12 +313,31 @@ class VoiceService {
+       // 1. Try Ultra-Realistic Studio Neural Voice if enabled
+       if (SettingsService.instance.useNeuralVoice) {
+         try {
++          // U2/H2: a fixed 7 s wall-clock timeout used to expire *while the
++          // native player was still speaking*, and the fallback below then
++          // started FlutterTts on top of it — two voices at once. Budget by
++          // utterance length instead, and never speak twice: if the engine
++          // still reports playback after the budget, stay silent.
++          final budget = Duration(
++            milliseconds: 4000 + (clean.length * 55),
++          );
+           final played = await EdgeTtsService.instance
+               .speak(clean)
+-              .timeout(const Duration(seconds: 7), onTimeout: () => false);
++              .timeout(budget, onTimeout: () => false);
+           if (played) {
+             return;
+           }
++          if (EdgeTtsService.instance.isSpeaking) {
++            debugPrint(
++              '[VoiceService] Neural voice still playing after $budget; '
++              'suppressing the local fallback to avoid double audio.',
++            );
++            return;
++          }
++          debugPrint(
++            '[VoiceService] Neural voice produced no audio within $budget; '
++            'falling back to local TTS.',
++          );
+         } catch (e) {
+           debugPrint('[VoiceService] Neural voice error, falling back to local TTS: $e');
+         }
+@@ -309,7 +360,9 @@ class VoiceService {
+         // Wait for playback, but never hang forever if the engine stalls.
+         await _speakCompleter?.future
+             .timeout(const Duration(seconds: 60), onTimeout: () {});
+-      } catch (_) {
++      } catch (e) {
++        // A silent TTS failure used to look like a successful (silent) reply.
++        debugPrint('[VoiceService] flutter_tts speak failed: $e');
+       } finally {
+         _speakCompleter = null;
+       }
+@@ -326,6 +379,10 @@ class VoiceService {
+       if (_speakCompleter != null && !_speakCompleter!.isCompleted) {
+         _speakCompleter!.complete();
+       }
+-    } catch (_) {}
++    } catch (e) {
++      // A13: a stuck TTS engine would otherwise keep the HUD in "speaking"
++      // with no diagnostics. Playback state is still reset by the finally.
++      debugPrint('[VoiceService] stopSpeaking failed: $e');
++    }
+   }
+ }

@@ -1,0 +1,278 @@
+diff --git a/lib/services/device_control_service.dart b/lib/services/device_control_service.dart
+index caf3ad6..c5c47b0 100644
+--- a/lib/services/device_control_service.dart
++++ b/lib/services/device_control_service.dart
+@@ -2,6 +2,8 @@ import 'dart:convert';
+ 
+ import 'package:flutter/services.dart';
+ 
++import 'contact_disambiguation_service.dart';
++
+ /// Result of a natural-language device command.
+ class DeviceControlResult {
+   final bool success;
+@@ -37,6 +39,51 @@ class DeviceControlService {
+ 
+   static const MethodChannel _channel = MethodChannel('com.jarvis.dev/device');
+ 
++  // ------------------------------------------------------------------
++  // A1: pending same-name contact choice
++  // ------------------------------------------------------------------
++
++  /// Numbers waiting for the user to pick one. Non-empty exactly while the
++  /// assistant is asking "which one do you want to call, sir?".
++  List<ContactCandidate> _pendingChoices = const [];
++  String _pendingName = '';
++  bool _pendingIsSms = false;
++  String _pendingBody = '';
++
++  /// True while a same-name contact question is outstanding.
++  bool get hasPendingContactChoice => _pendingChoices.isNotEmpty;
++
++  /// Current shortlist, for the UI/tests. Never mutated by callers.
++  List<ContactCandidate> get pendingContactChoices =>
++      List.unmodifiable(_pendingChoices);
++
++  /// Forgets the outstanding question (user changed the subject, hung up, …).
++  void cancelPendingContactChoice() {
++    _pendingChoices = const [];
++    _pendingName = '';
++    _pendingIsSms = false;
++    _pendingBody = '';
++  }
++
++  /// Records the shortlist and returns the read-back to speak.
++  String _beginContactChoice(
++    Map<String, dynamic> resolved,
++    String spokenName, {
++    bool forMessage = false,
++    String body = '',
++  }) {
++    final matches = ContactDisambiguationService.candidatesFromResult(resolved);
++    _pendingChoices = matches;
++    _pendingName = spokenName;
++    _pendingIsSms = forMessage;
++    _pendingBody = body;
++    return ContactDisambiguationService.buildPrompt(
++      spokenName,
++      matches,
++      forMessage: forMessage,
++    );
++  }
++
+   // ------------------------------------------------------------------
+   // Permission surface
+   // ------------------------------------------------------------------
+@@ -129,17 +176,65 @@ class DeviceControlService {
+   // Communication surface
+   // ------------------------------------------------------------------
+ 
++  /// Optional UI hook for the H5 confirmation gate.
++  ///
++  /// The native side refuses to send an SMS or place a direct call unless the
++  /// caller passes `confirmed: true`. Set this to a function that shows a real
++  /// confirmation dialog (and returns the user's answer) to enable those
++  /// actions. While it is `null`, the methods return the native preview
++  /// (`requiresConfirmation: true`) and nothing is sent — the safe default.
++  Future<bool> Function(String action, String preview)? confirmAction;
++
+   Future<Map<String, dynamic>> sendSms({
+     required String address,
+     required String body,
+-  }) async =>
+-      _safeMap(await _channel.invokeMethod('sendSms', {
+-        'address': address,
+-        'body': body,
+-      }));
++    bool confirmed = false,
++  }) async {
++    final res = _safeMap(await _channel.invokeMethod('sendSms', {
++      'address': address,
++      'body': body,
++      'confirmed': confirmed,
++    }));
++    if (confirmed || res['requiresConfirmation'] != true) return res;
++
++    final approve = await confirmAction?.call(
++          'sms',
++          res['preview']?.toString() ?? 'Send this SMS?',
++        ) ??
++        false;
++    if (!approve) return res;
++
++    return _safeMap(await _channel.invokeMethod('sendSms', {
++      'address': address,
++      'body': body,
++      'confirmed': true,
++    }));
++  }
+ 
+-  Future<Map<String, dynamic>> placeCall(String number) async =>
+-      _safeMap(await _channel.invokeMethod('placeCall', {'number': number}));
++  Future<Map<String, dynamic>> placeCall(
++    String number, {
++    bool confirmed = false,
++  }) async {
++    var res = _safeMap(
++      await _channel.invokeMethod('placeCall', {
++        'number': number,
++        'confirmed': confirmed,
++      }),
++    );
++    if (confirmed || res['requiresConfirmation'] != true) return res;
++
++    final approve = await confirmAction?.call(
++          'call',
++          res['preview']?.toString() ?? 'Place this call?',
++        ) ??
++        false;
++    if (!approve) return res;
++
++    return _safeMap(await _channel.invokeMethod('placeCall', {
++      'number': number,
++      'confirmed': true,
++    }));
++  }
+ 
+   Future<Map<String, dynamic>> resolveContact(String query) async =>
+       _safeMap(await _channel.invokeMethod('resolveContact', {'query': query}));
+@@ -221,6 +316,103 @@ class DeviceControlService {
+   ///  - "lock the phone"
+   ///  - "start/stop the background agent", "start location tracking",
+   ///    "stop screen capture"
++  /// A1: consumes the user's answer to "which number, sir?".
++  ///
++  /// Returns an empty [DeviceControlResult.spoken] when this was not an answer
++  /// at all (the user started a different command); the caller should then fall
++  /// through to normal command handling. Otherwise the result is what JARVIS
++  /// should say next — either the placed call / sent message, or a re-ask.
++  Future<DeviceControlResult> continuePendingContactChoice(
++    String utterance,
++  ) async {
++    if (_pendingChoices.isEmpty) {
++      return const DeviceControlResult(success: false, spoken: '');
++    }
++
++    if (ContactDisambiguationService.isCancellation(utterance)) {
++      cancelPendingContactChoice();
++      return const DeviceControlResult(
++        success: false,
++        spoken: 'Understood, sir. Standing by.',
++      );
++    }
++
++    // A pending question must not swallow an unrelated command.
++    if (ContactDisambiguationService.looksLikeNewCommand(utterance)) {
++      cancelPendingContactChoice();
++      return const DeviceControlResult(success: false, spoken: '');
++    }
++
++    final narrowed =
++        ContactDisambiguationService.narrow(utterance, _pendingChoices);
++
++    if (narrowed.isEmpty) {
++      // A1 step 10: zero matches — refuse and ask the user to repeat.
++      return DeviceControlResult(
++        success: false,
++        spoken: 'I did not catch that, sir. '
++            '${ContactDisambiguationService.buildPrompt(_pendingName, _pendingChoices, forMessage: _pendingIsSms)}',
++      );
++    }
++
++    if (narrowed.length > 1) {
++      // A1 step 9: still ambiguous — ask again with the shorter list.
++      _pendingChoices = narrowed;
++      return DeviceControlResult(
++        success: false,
++        spoken: ContactDisambiguationService.buildPrompt(
++          _pendingName,
++          narrowed,
++          forMessage: _pendingIsSms,
++        ),
++      );
++    }
++
++    // Exactly one match: resolve it and clear the question before acting.
++    final chosen = narrowed.first;
++    final wasSms = _pendingIsSms;
++    final body = _pendingBody;
++    cancelPendingContactChoice();
++
++    if (wasSms) {
++      final res = await sendSms(address: chosen.number, body: body);
++      if (res['success'] == true) {
++        return DeviceControlResult(
++          success: true,
++          spoken: 'Message sent to ${chosen.name}, sir.',
++          raw: res,
++        );
++      }
++      if (res['requiresConfirmation'] == true) {
++        return DeviceControlResult(
++          success: false,
++          spoken: 'The message to ${chosen.name} needs your confirmation, sir.',
++          raw: res,
++        );
++      }
++      return DeviceControlResult(
++        success: false,
++        spoken: res['message']?.toString() ??
++            'The message to ${chosen.name} failed to send, sir.',
++        raw: res,
++      );
++    }
++
++    final res = await placeCall(chosen.number);
++    if (res['success'] == true) {
++      return DeviceControlResult(
++        success: true,
++        spoken: 'Calling ${chosen.name}, sir.',
++        raw: res,
++      );
++    }
++    return DeviceControlResult(
++      success: false,
++      spoken: res['message']?.toString() ?? 'The call did not go through, sir.',
++      raw: res,
++    );
++  }
++
+   Future<DeviceControlResult> executeCommand(String raw) async {
+     final text = raw.trim();
+     final lower = text.toLowerCase();
+@@ -261,6 +453,14 @@ class DeviceControlService {
+           );
+         }
+         final contact = await resolveContact(target);
++        // A1: several numbers share the name — ask instead of guessing.
++        if (contact['requiresChoice'] == true) {
++          return DeviceControlResult(
++            success: false,
++            spoken: _beginContactChoice(contact, target),
++            raw: contact,
++          );
++        }
+         if (contact['success'] == true) {
+           final c = Map<String, dynamic>.from(contact['contact'] as Map);
+           final res = await placeCall(c['number']?.toString() ?? '');
+@@ -303,6 +503,20 @@ class DeviceControlService {
+           address = target;
+         } else {
+           final contact = await resolveContact(target);
++          // A1: several numbers share the name — ask, and keep the message body
++          // so the send can resume once the user has picked one.
++          if (contact['requiresChoice'] == true) {
++            return DeviceControlResult(
++              success: false,
++              spoken: _beginContactChoice(
++                contact,
++                target,
++                forMessage: true,
++                body: body,
++              ),
++              raw: contact,
++            );
++          }
+           if (contact['success'] == true) {
+             final c = Map<String, dynamic>.from(contact['contact'] as Map);
+             address = c['number']?.toString();
