@@ -1,0 +1,215 @@
+diff --git a/lib/services/ai_service.dart b/lib/services/ai_service.dart
+index ea354e4..c9f609a 100644
+--- a/lib/services/ai_service.dart
++++ b/lib/services/ai_service.dart
+@@ -1,6 +1,7 @@
+ import 'dart:async';
+ import 'dart:convert';
+ 
++import 'package:flutter/foundation.dart';
+ import 'package:http/http.dart' as http;
+ 
+ import 'conversational_memory_service.dart';
+@@ -8,6 +9,29 @@ import 'hermes_evolution_service.dart';
+ import 'personality_service.dart';
+ import 'settings_service.dart';
+ 
++/// Word-boundary keyword match used by the intent router.
++///
++/// `String.contains` is a raw substring test, so "mute" matched "commute",
++/// "score" matched "underscore", and every mention of "temperature" became a
++/// weather request. `\b` on both sides keeps the router to whole words.
++bool _hasWord(String text, String word) =>
++    RegExp('\\b${RegExp.escape(word)}\\b', caseSensitive: false).hasMatch(text);
++
++bool _hasAnyWord(String text, Iterable<String> words) =>
++    words.any((w) => _hasWord(text, w));
++
++/// U3: muting is only allowed when the utterance *is* the command.
++///
++/// Anything that merely mentions muting ("this song is too loud, mute it while
++/// I read" / "silence of the lambs") now falls through to conversation instead
++/// of silencing the phone mid-sentence.
++final RegExp _muteCommandPattern = RegExp(
++  r'^(?:(?:please|jarvis|hey\s+jarvis)\s+)*'
++  r'(?:mute|silence)'
++  r'(?:\s+(?:the\s+)?(?:phone|audio|sound|volume|media|everything))?$',
++  caseSensitive: false,
++);
++
+ /// Error thrown for any AI-gateway failure (network, auth, bad payload).
+ class AiException implements Exception {
+   final String message;
+@@ -338,12 +362,15 @@ class JarvisIntent {
+     }
+ 
+     // 3. Sports scores & schedules
+-    if (lower.contains('score') ||
+-        lower.contains('match') ||
+-        lower.contains('football') ||
+-        lower.contains('cricket') ||
+-        lower.contains('nba') ||
+-        lower.contains('premier league')) {
++    if (_hasAnyWord(lower, const [
++      'score',
++      'match',
++      'football',
++      'cricket',
++      'nba',
++      'premier league',
++    ])) {
++      debugPrint('[Intent] keyword match -> sports');
+       return JarvisIntent(
+         type: JarvisIntentType.sports,
+         spoken: 'Checking sports feeds and match fixtures, sir.',
+@@ -453,10 +480,13 @@ class JarvisIntent {
+     }
+ 
+     // Fast breaking news check
+-    if (lower.contains('news') ||
+-        lower.contains('headline') ||
+-        lower.contains('what happened today') ||
+-        lower.contains('breaking news')) {
++    if (_hasAnyWord(lower, const [
++          'news',
++          'headline',
++          'breaking news',
++        ]) ||
++        lower.contains('what happened today')) {
++      debugPrint('[Intent] keyword match -> news');
+       return const JarvisIntent(
+         type: JarvisIntentType.news,
+         spoken: 'Accessing live breaking news channels, sir.',
+@@ -508,8 +538,20 @@ class JarvisIntent {
+       );
+     }
+ 
+-    // Fast weather check
+-    if (lower.contains('weather') || lower.contains('temperature')) {
++    // Fast weather check. "temperature" on its own is ambiguous ("temperature
++    // of the CPU"), so a device-temperature question must not become a weather
++    // lookup.
++    final mentionsDeviceTemp = _hasAnyWord(lower, const [
++      'cpu',
++      'gpu',
++      'battery',
++      'device',
++      'phone',
++      'processor',
++    ]);
++    if (_hasWord(lower, 'weather') ||
++        (_hasWord(lower, 'temperature') && !mentionsDeviceTemp)) {
++      debugPrint('[Intent] keyword match -> weather');
+       var city = '';
+       if (lower.contains(' in ')) {
+         city = lower.split(' in ').last.trim();
+@@ -580,14 +622,19 @@ class JarvisIntent {
+         systemCommand: 'volume_down',
+       );
+     }
+-    if (lower.contains('mute') || lower.contains('silence')) {
++    // U3: only an explicit mute command may silence the phone. A loose
++    // `contains('mute')` check fired on "commute" and on any sentence that
++    // merely mentioned muting, which is the reported auto-mute bug.
++    if (_muteCommandPattern.hasMatch(lower)) {
++      debugPrint('[Intent] exact command match -> system.mute');
+       return const JarvisIntent(
+         type: JarvisIntentType.system,
+         spoken: 'Muting audio, sir.',
+         systemCommand: 'mute',
+       );
+     }
+-    if (lower.contains('screenshot') || lower.contains('screen shot')) {
++    if (_hasAnyWord(lower, const ['screenshot', 'screen shot'])) {
++      debugPrint('[Intent] keyword match -> system.screenshot');
+       return const JarvisIntent(
+         type: JarvisIntentType.system,
+         spoken: 'Capturing screen now, sir.',
+@@ -831,7 +878,11 @@ You cannot directly tap the screen in this mode. If the user asks you to perform
+         final decoded = jsonDecode(clean.substring(start, end + 1));
+         if (decoded is Map) return Map<String, dynamic>.from(decoded);
+       }
+-    } catch (_) {}
++    } catch (e) {
++      // A13: a malformed model reply used to be swallowed here, so the caller
++      // silently received an empty map with no trace of why.
++      debugPrint('[AiService] parseLenientJson: no JSON object in reply ($e)');
++    }
+     return {};
+   }
+ 
+@@ -845,7 +896,11 @@ You cannot directly tap the screen in this mode. If the user asks you to perform
+         final decoded = jsonDecode(clean.substring(start, end + 1));
+         if (decoded is List) return decoded;
+       }
+-    } catch (_) {}
++    } catch (e) {
++      // A13: same as parseLenientJson — an empty list is returned regardless,
++      // but the parse failure is now visible in logs.
++      debugPrint('[AiService] parseLenientJsonArray: no JSON array in reply ($e)');
++    }
+     return [];
+   }
+ 
+@@ -881,7 +936,7 @@ You cannot directly tap the screen in this mode. If the user asks you to perform
+     }
+ 
+     final base = settings.baseUrl.replaceAll(RegExp(r'/+$'), '');
+-    final uri = Uri.parse('$base/chat/completions');
++    final uri = _chatCompletionsUri(base);
+ 
+     final headers = <String, String>{
+       'Content-Type': 'application/json',
+@@ -1192,7 +1247,11 @@ Respond with ONLY a single JSON object:
+           );
+         }
+       }
+-    } catch (_) {}
++    } catch (e) {
++      // A13: intent classification failing used to look like a plain chat
++      // message. Log it so a broken model/endpoint is diagnosable.
++      debugPrint('[AiService] interpretJarvisCommand fallback: $e');
++    }
+ 
+     return JarvisIntent.fallback(speech);
+   }
+@@ -1322,6 +1381,30 @@ The user is viewing an article or screen on their device and requested an execut
+     }
+   }
+ 
++  /// Builds the chat-completions endpoint from the user-editable base URL.
++  ///
++  /// `SettingsService.baseUrl` is free text: a typo ("htp://…"), a stray space
++  /// or a broken IPv6 literal makes `Uri.parse` throw [FormatException] from
++  /// inside the request path, which surfaced as an unhandled crash rather than
++  /// a message the user could act on. Everything is normalised to
++  /// [AiException], which every caller already handles.
++  static Uri _chatCompletionsUri(String base) {
++    final trimmed = base.trim();
++    try {
++      final uri = Uri.parse('$trimmed/chat/completions');
++      if (!uri.hasScheme || uri.host.isEmpty) {
++        throw AiException(
++          'Invalid base URL: "$trimmed" is not an absolute http(s) URL.',
++        );
++      }
++      return uri;
++    } on AiException {
++      rethrow;
++    } on FormatException catch (e) {
++      throw AiException('Invalid base URL: "$trimmed" (${e.message}).');
++    }
++  }
++
+   /// Shared request/response plumbing for [complete], [chat], and [completeMultimodal].
+   Future<String> _postChatCompletion(
+     List<Map<String, dynamic>> messages,
+@@ -1340,7 +1423,7 @@ The user is viewing an article or screen on their device and requested an execut
+     }
+ 
+     final base = settings.baseUrl.replaceAll(RegExp(r'/+$'), '');
+-    final uri = Uri.parse('$base/chat/completions');
++    final uri = _chatCompletionsUri(base);
+ 
+     final headers = <String, String>{
+       'Content-Type': 'application/json',

@@ -1,0 +1,10 @@
+# Root ignore file.
+#
+# C4 / A11: signing material must never be committed. `android/.gitignore`
+# already covers the android/ subtree; these patterns also catch a keystore
+# created at the repository root (the example command in
+# `android/key.properties.example` writes to ~/jarvis-release.jks, but people
+# copy files around).
+android/key.properties
+*.jks
+*.keystore

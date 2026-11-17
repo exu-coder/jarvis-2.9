@@ -1,0 +1,17 @@
+diff --git a/lib/services/security_alert_service.dart b/lib/services/security_alert_service.dart
+index 21283a7..b795ba1 100644
+--- a/lib/services/security_alert_service.dart
++++ b/lib/services/security_alert_service.dart
+@@ -81,7 +81,11 @@ class SecurityAlertService extends ChangeNotifier {
+           ownerChatId,
+           '🚨 JARVIS SECURITY ALERT:\n$alertMessage',
+         );
+-      } catch (_) {}
++      } catch (error) {
++        // Alert delivery is best-effort: never rethrow, but leave a trace so a
++        // failed security notification is diagnosable from the device log.
++        debugPrint('[SecurityAlertService] dispatch failed: $error');
++      }
+     }
+   }
+ }

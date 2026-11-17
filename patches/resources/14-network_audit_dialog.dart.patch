@@ -1,0 +1,289 @@
+diff --git a/lib/widgets/network_audit_dialog.dart b/lib/widgets/network_audit_dialog.dart
+index 98785e4..bc2e4a9 100644
+--- a/lib/widgets/network_audit_dialog.dart
++++ b/lib/widgets/network_audit_dialog.dart
+@@ -17,7 +17,18 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+   @override
+   void initState() {
+     super.initState();
+-    _service.auditNetwork();
++    _runAudit();
++  }
++
++  @override
++  void dispose() {
++    // Abandon an in-flight sweep: the dialog that asked for it is gone.
++    _service.cancelAudit();
++    super.dispose();
++  }
++
++  Future<void> _runAudit() async {
++    await _service.auditNetwork();
+   }
+ 
+   @override
+@@ -49,6 +60,15 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+             builder: (context, _) {
+               final isAuditing = _service.isAuditing;
+               final report = _service.lastReport;
++              final error = _service.lastError;
++              // A missing measurement renders as "n/a" — never as a number.
++              final scoreLabel = report == null
++                  ? (isAuditing ? 'SCANNING...' : 'NO DATA')
++                  : (report.securityScore == null
++                      ? 'n/a'
++                      : '${report.securityScore} / 100');
++              final pingMs = report?.pingLatencyMs;
++              final pingLabel = pingMs == null ? '--' : '$pingMs ms';
+ 
+               return Column(
+                 children: [
+@@ -115,7 +135,7 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           children: [
+                             Text(
+-                              report != null ? '${report.securityScore} / 100' : 'SCANNING...',
++                              scoreLabel,
+                               style: const TextStyle(
+                                 color: Colors.white,
+                                 fontFamily: 'monospace',
+@@ -138,7 +158,7 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+                           crossAxisAlignment: CrossAxisAlignment.end,
+                           children: [
+                             Text(
+-                              report != null ? '${report.pingLatencyMs} ms' : '--',
++                              pingLabel,
+                               style: const TextStyle(
+                                 color: Color(0xFF00E676),
+                                 fontFamily: 'monospace',
+@@ -162,6 +182,43 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+ 
+                   const SizedBox(height: 12),
+ 
++                  // Failure state: show the reason instead of inventing a report.
++                  if (report == null && error != null && !isAuditing)
++                    Container(
++                      width: double.infinity,
++                      margin: const EdgeInsets.only(bottom: 8),
++                      padding: const EdgeInsets.all(10),
++                      decoration: BoxDecoration(
++                        color: Colors.orangeAccent.withValues(alpha: 0.10),
++                        borderRadius: BorderRadius.circular(12),
++                        border: Border.all(
++                          color: Colors.orangeAccent.withValues(alpha: 0.45),
++                        ),
++                      ),
++                      child: Row(
++                        crossAxisAlignment: CrossAxisAlignment.start,
++                        children: [
++                          const Icon(
++                            Icons.error_outline,
++                            color: Colors.orangeAccent,
++                            size: 14,
++                          ),
++                          const SizedBox(width: 6),
++                          Expanded(
++                            child: Text(
++                              'AUDIT FAILED — $error',
++                              style: const TextStyle(
++                                color: Colors.orangeAccent,
++                                fontFamily: 'monospace',
++                                fontSize: 9.5,
++                                height: 1.35,
++                              ),
++                            ),
++                          ),
++                        ],
++                      ),
++                    ),
++
+                   // Vulnerabilities & Alerts
+                   if (report != null && report.vulnerabilities.isNotEmpty)
+                     Container(
+@@ -207,84 +264,106 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+                   // Connected Devices List
+                   Expanded(
+                     child: report == null
+-                        ? const Center(
+-                            child: CircularProgressIndicator(color: cyan),
++                        ? Center(
++                            child: isAuditing || error == null
++                                ? const CircularProgressIndicator(color: cyan)
++                                : const Text(
++                                    'AUDIT FAILED — NO DEVICE DATA',
++                                    style: TextStyle(
++                                      color: Colors.white54,
++                                      fontFamily: 'monospace',
++                                      fontSize: 10.5,
++                                      letterSpacing: 1.1,
++                                    ),
++                                  ),
+                           )
+-                        : ListView.builder(
+-                            itemCount: report.devices.length,
+-                            itemBuilder: (context, idx) {
+-                              final dev = report.devices[idx];
+-                              return Container(
+-                                margin: const EdgeInsets.symmetric(vertical: 4),
+-                                padding: const EdgeInsets.all(10),
+-                                decoration: BoxDecoration(
+-                                  color: Colors.white.withValues(alpha: 0.04),
+-                                  borderRadius: BorderRadius.circular(12),
+-                                  border: Border.all(
+-                                    color: dev.isCameraStream
+-                                        ? Colors.orangeAccent.withValues(alpha: 0.5)
+-                                        : cyan.withValues(alpha: 0.2),
++                        : report.devices.isEmpty
++                            ? const Center(
++                                child: Text(
++                                  'NO HOSTS ANSWERED THE SWEEP',
++                                  style: TextStyle(
++                                    color: Colors.white54,
++                                    fontFamily: 'monospace',
++                                    fontSize: 10.5,
++                                    letterSpacing: 1.1,
+                                   ),
+                                 ),
+-                                child: Row(
+-                                  children: [
+-                                    Icon(
+-                                      dev.isCameraStream
+-                                          ? Icons.videocam
+-                                          : (dev.isGateway ? Icons.router : Icons.devices),
+-                                      color: dev.isCameraStream ? Colors.orangeAccent : cyan,
+-                                      size: 18,
++                              )
++                            : ListView.builder(
++                                itemCount: report.devices.length,
++                                itemBuilder: (context, idx) {
++                                  final dev = report.devices[idx];
++                                  return Container(
++                                    margin: const EdgeInsets.symmetric(vertical: 4),
++                                    padding: const EdgeInsets.all(10),
++                                    decoration: BoxDecoration(
++                                      color: Colors.white.withValues(alpha: 0.04),
++                                      borderRadius: BorderRadius.circular(12),
++                                      border: Border.all(
++                                        color: dev.isCameraStream
++                                            ? Colors.orangeAccent.withValues(alpha: 0.5)
++                                            : cyan.withValues(alpha: 0.2),
++                                      ),
+                                     ),
+-                                    const SizedBox(width: 10),
+-                                    Expanded(
+-                                      child: Column(
+-                                        crossAxisAlignment: CrossAxisAlignment.start,
+-                                        children: [
+-                                          Text(
+-                                            dev.hostname,
+-                                            style: const TextStyle(
+-                                              color: Colors.white,
+-                                              fontFamily: 'monospace',
+-                                              fontSize: 11,
+-                                              fontWeight: FontWeight.w700,
+-                                            ),
++                                    child: Row(
++                                      children: [
++                                        Icon(
++                                          dev.isCameraStream
++                                              ? Icons.videocam
++                                              : (dev.isGateway ? Icons.router : Icons.devices),
++                                          color: dev.isCameraStream ? Colors.orangeAccent : cyan,
++                                          size: 18,
++                                        ),
++                                        const SizedBox(width: 10),
++                                        Expanded(
++                                          child: Column(
++                                            crossAxisAlignment: CrossAxisAlignment.start,
++                                            children: [
++                                              Text(
++                                                dev.hostname,
++                                                style: const TextStyle(
++                                                  color: Colors.white,
++                                                  fontFamily: 'monospace',
++                                                  fontSize: 11,
++                                                  fontWeight: FontWeight.w700,
++                                                ),
++                                              ),
++                                              Text(
++                                                '${dev.ip} • ${dev.vendor}',
++                                                style: const TextStyle(color: Colors.white54, fontSize: 9.5),
++                                              ),
++                                            ],
+                                           ),
+-                                          Text(
+-                                            '${dev.ip} • ${dev.vendor}',
+-                                            style: const TextStyle(color: Colors.white54, fontSize: 9.5),
++                                        ),
++                                        if (dev.openPorts.isNotEmpty)
++                                          Wrap(
++                                            spacing: 4,
++                                            children: dev.openPorts.map((p) {
++                                              return Container(
++                                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
++                                                decoration: BoxDecoration(
++                                                  color: p == 554
++                                                      ? Colors.orange.withValues(alpha: 0.25)
++                                                      : cyan.withValues(alpha: 0.15),
++                                                  borderRadius: BorderRadius.circular(6),
++                                                ),
++                                                child: Text(
++                                                  ':$p',
++                                                  style: TextStyle(
++                                                    color: p == 554 ? Colors.orangeAccent : cyan,
++                                                    fontFamily: 'monospace',
++                                                    fontSize: 9,
++                                                    fontWeight: FontWeight.w700,
++                                                  ),
++                                                ),
++                                              );
++                                            }).toList(),
+                                           ),
+-                                        ],
+-                                      ),
++                                      ],
+                                     ),
+-                                    if (dev.openPorts.isNotEmpty)
+-                                      Wrap(
+-                                        spacing: 4,
+-                                        children: dev.openPorts.map((p) {
+-                                          return Container(
+-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+-                                            decoration: BoxDecoration(
+-                                              color: p == 554
+-                                                  ? Colors.orange.withValues(alpha: 0.25)
+-                                                  : cyan.withValues(alpha: 0.15),
+-                                              borderRadius: BorderRadius.circular(6),
+-                                            ),
+-                                            child: Text(
+-                                              ':$p',
+-                                              style: TextStyle(
+-                                                color: p == 554 ? Colors.orangeAccent : cyan,
+-                                                fontFamily: 'monospace',
+-                                                fontSize: 9,
+-                                                fontWeight: FontWeight.w700,
+-                                              ),
+-                                            ),
+-                                          );
+-                                        }).toList(),
+-                                      ),
+-                                  ],
+-                                ),
+-                              );
+-                            },
+-                          ),
++                                  );
++                                },
++                              ),
+                   ),
+ 
+                   const SizedBox(height: 10),
+@@ -306,7 +385,7 @@ class _NetworkAuditDialogState extends State<NetworkAuditDialog> {
+                           ? null
+                           : () {
+                               HapticFeedback.mediumImpact();
+-                              _service.auditNetwork();
++                              _runAudit();
+                             },
+                       icon: const Icon(Icons.security, size: 18),
+                       label: Text(

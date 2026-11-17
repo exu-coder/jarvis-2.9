@@ -1,0 +1,226 @@
+diff --git a/lib/services/edge_tts_service.dart b/lib/services/edge_tts_service.dart
+index 4fffe63..90b3c85 100644
+--- a/lib/services/edge_tts_service.dart
++++ b/lib/services/edge_tts_service.dart
+@@ -98,8 +98,32 @@ class EdgeTtsService {
+   bool _isSpeaking = false;
+   bool get isSpeaking => _isSpeaking;
+ 
++  /// Number of consecutive synthesis failures tolerated before the service
++  /// downgrades itself to the on-device TTS engine.
++  static const int _failureThreshold = 3;
++
++  int _consecutiveFailures = 0;
++  bool? _capabilityProbedOk;
++
+   // ---------------------------------------------------------------------------
+   // DRM Sec-MS-GEC v2 Cryptographic Implementation
++  //
++  // UNSUPPORTED / AT RISK — READ BEFORE CHANGING ANYTHING BELOW.
++  //
++  // This reimplements Microsoft's unofficial Edge "read aloud" handshake:
++  // a self-generated `Sec-MS-GEC` token, a hard-pinned Chromium UA
++  // ([_chromiumVersion]), and forged `Origin`/`Cookie` headers. It is not a
++  // documented API, it is not licensed for third-party use, and it almost
++  // certainly breaches the service terms. It is also brittle: Microsoft
++  // rotates the token layout and the browser build, and when it does, this
++  // code stops working without any error the user can act on.
++  //
++  // Do not extend or "fix" the crypto here. Speech must keep working, so the
++  // service now degrades instead: [ensureAvailable] is probed once per process,
++  // [_recordFailure] trips after [_failureThreshold] consecutive failures, and
++  // the persisted `jarvis_neural_voice_degraded` flag makes voice_service.dart
++  // fall back to flutter_tts. See NOTES.md (design note M1) for the fallback
++  // ladder and the legal reasoning.
+   // ---------------------------------------------------------------------------
+ 
+   static int _rol16(int value) {
+@@ -502,9 +526,131 @@ class EdgeTtsService {
+   // Audio Synthesis & Playback
+   // ---------------------------------------------------------------------------
+ 
++  /// Deletes stale and surplus files from the audio cache directory.
++  ///
++  /// Enforces two independent bounds so the cache cannot grow for the life of
++  /// the install: nothing older than [maxAgeDays], and at most [maxFiles]
++  /// entries (oldest evicted first). Safe to call on every synthesis start;
++  /// returns the number of files deleted.
++  @visibleForTesting
++  static int pruneAudioCacheSync(
++    Directory dir, {
++    int maxAgeDays = 7,
++    int maxFiles = 50,
++    DateTime? now,
++  }) {
++    if (!dir.existsSync()) return 0;
++
++    final cutoff = (now ?? DateTime.now()).subtract(Duration(days: maxAgeDays));
++    var deleted = 0;
++    final surviving = <File>[];
++
++    try {
++      for (final entity in dir.listSync(followLinks: false)) {
++        if (entity is! File) continue;
++        try {
++          if (entity.statSync().modified.isBefore(cutoff)) {
++            entity.deleteSync();
++            deleted++;
++          } else {
++            surviving.add(entity);
++          }
++        } catch (e) {
++          debugPrint('[EdgeTtsService] Cache prune failed for ${entity.path}: $e');
++        }
++      }
++    } catch (e) {
++      debugPrint('[EdgeTtsService] Cache prune scan failed: $e');
++      return deleted;
++    }
++
++    if (surviving.length > maxFiles) {
++      surviving.sort((a, b) {
++        final at = a.statSync().modified;
++        final bt = b.statSync().modified;
++        return at.compareTo(bt);
++      });
++      for (final file in surviving.take(surviving.length - maxFiles)) {
++        try {
++          file.deleteSync();
++          deleted++;
++        } catch (e) {
++          debugPrint('[EdgeTtsService] Cache prune failed for ${file.path}: $e');
++        }
++      }
++    }
++
++    return deleted;
++  }
++
++  /// Cheap reachability probe for the Edge-TTS host.
++  ///
++  /// Opens a TCP/TLS connection only — it synthesises nothing and cannot tell
++  /// whether the token is still accepted, just whether the endpoint is there.
++  Future<bool> probeCapability({
++    Duration timeout = const Duration(seconds: 4),
++  }) async {
++    Socket? socket;
++    try {
++      socket = await Socket.connect(
++        'speech.platform.bing.com',
++        443,
++        timeout: timeout,
++      );
++      return true;
++    } catch (e) {
++      debugPrint('[EdgeTtsService] Capability probe failed: $e');
++      return false;
++    } finally {
++      socket?.destroy();
++    }
++  }
++
++  /// True when Edge TTS may still be attempted.
++  ///
++  /// Probes at most once per process. A failed probe (offline, DNS blocked,
++  /// endpoint retired) persists the downgrade flag so the next launch does not
++  /// pay the latency again.
++  Future<bool> ensureAvailable() async {
++    if (SettingsService.instance.neuralVoiceDegraded) return false;
++    final probed = _capabilityProbedOk;
++    if (probed != null) return probed;
++
++    final ok = await probeCapability();
++    _capabilityProbedOk = ok;
++    if (!ok) {
++      debugPrint('[EdgeTtsService] Endpoint unreachable — downgrading to '
++          'on-device TTS.');
++      await SettingsService.instance.setNeuralVoiceDegraded(true);
++    }
++    return ok;
++  }
++
++  /// Clears a previous downgrade so the user can retry the neural voice.
++  Future<void> resetDowngrade() async {
++    _consecutiveFailures = 0;
++    _capabilityProbedOk = null;
++    await SettingsService.instance.setNeuralVoiceDegraded(false);
++  }
++
++  void _recordFailure() {
++    _consecutiveFailures++;
++    if (_consecutiveFailures < _failureThreshold) return;
++    debugPrint('[EdgeTtsService] $_failureThreshold consecutive synthesis '
++        'failures — downgrading to on-device TTS.');
++    unawaited(SettingsService.instance.setNeuralVoiceDegraded(true));
++  }
++
+   /// Synthesizes [text] using Edge Neural TTS and writes the resulting MP3
+   /// into the device cache directory. Returns the local [File].
++  ///
++  /// Returns `null` when synthesis is unavailable or failed; every caller
++  /// treats that as "fall back to the native engine".
+   Future<File?> synthesize(String text, {String? voice}) async {
++    if (SettingsService.instance.neuralVoiceDegraded) {
++      return null;
++    }
++
+     final selectedVoice = voice ?? SettingsService.instance.jarvisNeuralVoice;
+ 
+     // Fast-path: Check disk cache
+@@ -514,6 +660,9 @@ class EdgeTtsService {
+       jarvisDir.createSync(recursive: true);
+     }
+ 
++    // Bound the cache before adding to it (see pruneAudioCacheSync).
++    pruneAudioCacheSync(jarvisDir);
++
+     final key = md5.convert(utf8.encode('$selectedVoice:$text')).toString();
+     final cachedFile = File('${jarvisDir.path}/$key.mp3');
+     if (cachedFile.existsSync() && cachedFile.lengthSync() > 1024) {
+@@ -602,16 +751,24 @@ class EdgeTtsService {
+ 
+       if (audioBytes.length > 512) {
+         await cachedFile.writeAsBytes(audioBytes);
++        _consecutiveFailures = 0;
+         return cachedFile;
+       }
++      _recordFailure();
+       return null;
+     } catch (e) {
+       debugPrint('[EdgeTtsService] Synthesis failed: $e');
++      _recordFailure();
+       return null;
+     } finally {
+       try {
+         await ws?.close();
+-      } catch (_) {}
++      } catch (e) {
++        debugPrint('[EdgeTtsService] WebSocket close failed: $e');
++      }
++      // HttpClient owns a connection pool and its sockets; without this the
++      // sockets and file descriptors accumulate for the life of the process.
++      client.close(force: true);
+     }
+   }
+ 
+@@ -621,6 +778,10 @@ class EdgeTtsService {
+   Future<bool> speak(String text, {String? voice}) async {
+     try {
+       _isSpeaking = true;
++      if (!await ensureAvailable()) {
++        _isSpeaking = false;
++        return false;
++      }
+       final file = await synthesize(text, voice: voice);
+       if (file == null || !file.existsSync()) {
+         _isSpeaking = false;
+@@ -645,6 +806,8 @@ class EdgeTtsService {
+     try {
+       _isSpeaking = false;
+       await _channel.invokeMethod('stopAudio');
+-    } catch (_) {}
++    } catch (e) {
++      debugPrint('[EdgeTtsService] stopAudio failed: $e');
++    }
+   }
+ }

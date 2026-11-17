@@ -81,7 +81,11 @@ class SecurityAlertService extends ChangeNotifier {
           ownerChatId,
           '🚨 JARVIS SECURITY ALERT:\n$alertMessage',
         );
-      } catch (_) {}
+      } catch (error) {
+        // Alert delivery is best-effort: never rethrow, but leave a trace so a
+        // failed security notification is diagnosable from the device log.
+        debugPrint('[SecurityAlertService] dispatch failed: $error');
+      }
     }
   }
 }

@@ -92,6 +92,27 @@ class ScreenNode {
     return false;
   }
 
+  /// Compact one-line form used when nodes are interpolated into an LLM prompt.
+  ///
+  /// `ScreenNode(#3 "Send" [clickable] @540,1880)` — dashes collapse, quotes are
+  /// normalised, and the class name is only shown when there is no label, so a
+  /// full screen dump stays small enough to be worth the tokens.
   @override
-  String toString() => 'ScreenNode(#$index "$label" $shortClass @$centerX,$centerY)';
+  String toString() {
+    final label = this
+        .label
+        .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+        .replaceAll('"', "'")
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    final flags = <String>[
+      if (isClickable) 'clickable',
+      if (isEditable) 'editable',
+      if (isScrollable) 'scrollable',
+      if (isCheckable) 'checkable',
+    ];
+    final flagStr = flags.isEmpty ? '' : ' [${flags.join(',')}]';
+    final shown = label.isNotEmpty ? label : shortClass;
+    return 'ScreenNode(#$index "$shown"$flagStr @$centerX,$centerY)';
+  }
 }

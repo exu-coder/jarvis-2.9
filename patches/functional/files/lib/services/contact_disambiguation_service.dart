@@ -1,0 +1,301 @@
+/// A1 — same-name contact disambiguation.
+///
+/// A spoken name can legitimately match several numbers: the same contact saved
+/// twice, a contact plus a call-history entry, or two people both called
+/// "Jarvis". The rule is a digit chain, and it is deliberately mechanical so the
+/// assistant can never silently dial the wrong person:
+///
+///  1. The native resolver returns *all* matches (see
+///     `DeviceControlManager.resolveContact`), never a single best guess.
+///  2. The assistant reads the numbers back, speaking the last three digits of
+///     each one: "Number one, ending in 4-3-2."
+///  3. The user answers with digits ("four three two", "4-3-2", "ending in 2")
+///     or with an explicit ordinal ("number two", "the second one").
+///  4. Exactly one match resolves the choice. More than one re-asks with the
+///     shorter list. Zero asks the user to repeat. Nothing is ever guessed.
+///
+/// Everything here is pure so it can be unit-tested without a device, a
+/// microphone or a contacts provider.
+library;
+
+/// One callable number that matched a spoken name.
+class ContactCandidate {
+  /// Display name as stored by the contacts (or call-log) provider.
+  final String name;
+
+  /// Raw formatted number, exactly as it should be dialled.
+  final String number;
+
+  /// `contact` or `callHistory` — informational only, never dialled.
+  final String source;
+
+  const ContactCandidate({
+    required this.name,
+    required this.number,
+    this.source = 'contact',
+  });
+
+  factory ContactCandidate.fromMap(Map raw) => ContactCandidate(
+        name: (raw['name'] ?? '').toString(),
+        number: (raw['number'] ?? '').toString(),
+        source: (raw['source'] ?? 'contact').toString(),
+      );
+
+  /// Digits only, so "+91 98765 43210" and "09876543210" compare equal.
+  String get digits => ContactDisambiguationService.digitsOnly(number);
+
+  /// The last three digits, or fewer when the number is very short.
+  String get lastThree {
+    final d = digits;
+    if (d.isEmpty) return '';
+    return d.length <= 3 ? d : d.substring(d.length - 3);
+  }
+
+  @override
+  String toString() => '$name <$number>';
+}
+
+/// Pure digit-chain matching used by the voice layer.
+class ContactDisambiguationService {
+  ContactDisambiguationService._();
+
+  static final ContactDisambiguationService instance =
+      ContactDisambiguationService._();
+
+  static const List<String> _numberWords = [
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+  ];
+
+  /// Spoken and numeric forms of a digit.
+  static const Map<String, String> _wordDigits = {
+    'zero': '0',
+    'oh': '0',
+    'o': '0',
+    'one': '1',
+    'two': '2',
+    'three': '3',
+    'four': '4',
+    'five': '5',
+    'six': '6',
+    'seven': '7',
+    'eight': '8',
+    'nine': '9',
+  };
+
+  /// Words that only mean "choice N" after a marker such as "number".
+  static const Map<String, int> _ordinalWords = {
+    'first': 1,
+    'second': 2,
+    'third': 3,
+    'fourth': 4,
+    'fifth': 5,
+    '1st': 1,
+    '2nd': 2,
+    '3rd': 3,
+    '4th': 4,
+    '5th': 5,
+    'one': 1,
+    'two': 2,
+    'three': 3,
+    'four': 4,
+    'five': 5,
+  };
+
+  /// Words that turn a following number into an ordinal ("number two").
+  static const Set<String> _choiceMarkers = {
+    'number',
+    'num',
+    'option',
+    'choice',
+    'pick',
+    'select',
+  };
+
+  /// Unambiguous ordinal words. Unlike "one"/"two", these cannot be read as a
+  /// pronoun, so they count as an ordinal without a marker.
+  static const Set<String> _explicitOrdinals = {
+    'first',
+    'second',
+    'third',
+    'fourth',
+    'fifth',
+    '1st',
+    '2nd',
+    '3rd',
+    '4th',
+    '5th',
+  };
+
+  /// Only complete phrases count. A token-prefix match ("stop the music") would
+  /// swallow a genuinely different command, and this check runs before routing.
+  static const Set<String> _cancellations = {
+    'cancel',
+    'cancel that',
+    'cancel the call',
+    'never mind',
+    'never mind that',
+    'nevermind',
+    'forget it',
+    'forget that',
+    'forget about it',
+    'no',
+    'no thanks',
+    'nope',
+    'stop',
+    'abort',
+    'leave it',
+    'not now',
+  };
+
+  /// Digits only, in order.
+  static String digitsOnly(String input) =>
+      input.replaceAll(RegExp(r'[^0-9]'), '');
+
+  /// Every digit the utterance contains, in order — numerals and spoken words.
+  ///
+  /// "ending in four three two" -> "432"; "9-1-7" -> "917"; "number two" -> "2".
+  static String spokenDigits(String utterance) {
+    final buffer = StringBuffer();
+    for (final token in utterance.toLowerCase().split(RegExp(r'[^a-z0-9]+'))) {
+      if (token.isEmpty) continue;
+      if (RegExp(r'^[0-9]+$').hasMatch(token)) {
+        buffer.write(token);
+        continue;
+      }
+      final digit = _wordDigits[token];
+      if (digit != null) buffer.write(digit);
+    }
+    return buffer.toString();
+  }
+
+  /// 1-based ordinal when the user explicitly picked by position.
+  ///
+  /// "number two" and "the second one" are ordinals; "the one ending in
+  /// 4-3-2" is not, because "one" there is a pronoun and the digits carry the
+  /// real intent. Returns null when the utterance is not ordinal.
+  static int? ordinalIndex(String utterance) {
+    final tokens = utterance.toLowerCase().split(RegExp(r'[^a-z0-9]+'));
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+      if (token.isEmpty) continue;
+      final marked = i > 0 && _choiceMarkers.contains(tokens[i - 1]);
+      if (!_explicitOrdinals.contains(token) && !marked) continue;
+      final value = _ordinalWords[token] ?? int.tryParse(token);
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  /// True when the user is declining the choice instead of answering it.
+  static bool isCancellation(String utterance) {
+    final normalised = utterance
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z ]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (normalised.isEmpty) return false;
+    return _cancellations.contains(normalised);
+  }
+
+  /// True when the utterance carries no choice information at all and reads
+  /// like a fresh command, e.g. "what is the weather tomorrow".
+  ///
+  /// Used to drop a stale pending choice instead of looping on "I did not catch
+  /// that". Kept deliberately conservative: any digit or ordinal keeps it in
+  /// the choice flow.
+  static bool looksLikeNewCommand(String utterance) {
+    if (spokenDigits(utterance).isNotEmpty) return false;
+    if (ordinalIndex(utterance) != null) return false;
+    final words = utterance
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .length;
+    return words >= 4;
+  }
+
+  /// The candidates carried by a native `resolveContact` result.
+  static List<ContactCandidate> candidatesFromResult(
+    Map<String, dynamic> result,
+  ) {
+    final raw = result['matches'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((m) => ContactCandidate.fromMap(m))
+        .where((c) => c.name.isNotEmpty && c.number.isNotEmpty)
+        .toList();
+  }
+
+  /// "Number one, ending in 4-3-2."
+  static String describeCandidate(int index, ContactCandidate candidate) {
+    final word =
+        index < _numberWords.length ? _numberWords[index] : '${index + 1}';
+    final tail = candidate.lastThree.split('').join('-');
+    if (tail.isEmpty) return 'Number $word.';
+    return 'Number $word, ending in $tail.';
+  }
+
+  /// The full read-back. [forMessage] swaps the trailing verb for SMS.
+  static String buildPrompt(
+    String spokenName,
+    List<ContactCandidate> matches, {
+    bool forMessage = false,
+  }) {
+    final count = matches.length;
+    if (count == 0) {
+      return 'I could not find that contact, sir.';
+    }
+    if (count == 1) {
+      return forMessage
+          ? 'Sending your message to ${matches.first.name}, sir.'
+          : 'Calling ${matches.first.name}, sir.';
+    }
+    final verb = forMessage ? 'message' : 'call';
+    final buffer = StringBuffer(
+      'I found $count numbers for $spokenName. Which one do you want to $verb, sir? ',
+    );    for (var i = 0; i < matches.length; i++) {
+      buffer.write(describeCandidate(i, matches[i]));
+      buffer.write(' ');
+    }
+    buffer.write('Which one do you want to $verb, sir?');
+    return buffer.toString();
+  }
+
+  /// Applies the digit chain to one utterance.
+  ///
+  /// Returns the narrowed candidate list:
+  ///  * exactly one entry  -> resolved, place the call / send the message;
+  ///  * more than one      -> caller re-asks with this shorter list;
+  ///  * empty              -> nothing matched, caller asks the user to repeat.
+  static List<ContactCandidate> narrow(
+    String utterance,
+    List<ContactCandidate> candidates,
+  ) {
+    if (candidates.isEmpty) return const [];
+
+    // 1. Explicit ordinal wins: "number two", "the second one".
+    final ordinal = ordinalIndex(utterance);
+    if (ordinal != null && ordinal >= 1 && ordinal <= candidates.length) {
+      return [candidates[ordinal - 1]];
+    }
+
+    // 2. Digit chain: any digits the user said must be the tail of the number.
+    final spoken = spokenDigits(utterance);
+    if (spoken.isEmpty) return const [];
+    final matches = candidates
+        .where((c) =>
+            spoken.length <= c.digits.length && c.digits.endsWith(spoken))
+        .toList();
+    return matches;
+  }
+}

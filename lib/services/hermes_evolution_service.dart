@@ -151,8 +151,10 @@ class HermesEvolutionService extends ChangeNotifier {
       await File('${hermesDir.path}/soul.md').writeAsString(_soulMd);
       await File('${hermesDir.path}/user.md').writeAsString(_userMd);
       await File('${hermesDir.path}/agent.md').writeAsString(_agentMd);
-    } catch (_) {
-      // Ignored if file system is sandboxed or unit testing
+    } catch (e) {
+      // Sandboxed filesystems legitimately fail here, but a silent failure also
+      // hides real data loss: the learned context would vanish on restart.
+      debugPrint('[HermesEvolutionService] context sync to disk failed: $e');
     }
   }
 

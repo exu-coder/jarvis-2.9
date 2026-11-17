@@ -128,6 +128,11 @@ class JarvisService extends ChangeNotifier {
 
   bool get isAlwaysOn => SettingsService.instance.jarvisAlwaysOn;
   bool get _shouldListenContinuously => isAlwaysOn || _isInJarvisMode;
+
+  /// U1: automatic (re)arm of the microphone is only allowed when the user has
+  /// explicitly opted into hands-free listening. Opening the HUD, a finished
+  /// reply or a finished task must never open the mic on its own.
+  bool get _canAutoListen => SettingsService.instance.jarvisAlwaysOn;
   ProactiveSuggestion? get pendingProactiveSuggestion => _pendingProactiveSuggestion;
   bool get isAwaitingProactiveConfirmation => _pendingProactiveSuggestion != null;
 
@@ -145,7 +150,10 @@ class JarvisService extends ChangeNotifier {
         'status': _statusMessage,
         'lastSpeech': _lastJarvisSpeech,
       }));
-    } catch (_) {}
+    } catch (e) {
+      // A13: the overlay HUD would freeze on a stale phase with no clue why.
+      debugPrint('[JarvisService] overlay state broadcast failed: $e');
+    }
   }
 
   void _initListeners() {
@@ -163,76 +171,91 @@ class JarvisService extends ChangeNotifier {
     unawaited(ProactiveAgentService.instance.evaluateProactiveNeeds());
     ProactiveAgentService.instance.startProactiveMonitor();
 
-    _voice.soundLevel.addListener(() {
-      _soundLevel = _voice.soundLevel.value;
-      notifyListeners();
-    });
+    _voice.soundLevel.addListener(_onSoundLevelChanged);
 
-    _voice.onSpeechStatus = (status) {
-      if (status == 'endOfSpeech') {
-        if (_isAwake && _lastUserSpeech.isNotEmpty) {
-          _speechSilenceTimer?.cancel();
-          _speechSilenceTimer = Timer(const Duration(milliseconds: 350), () {
-            final trimmed = _lastUserSpeech.trim();
-            if (trimmed.isNotEmpty) {
-              unawaited(_handleSpeechResult(trimmed));
-            }
-          });
-        }
-      }
-    };
+    _voice.onSpeechStatus = _onSpeechStatus;
 
-    _voice.isSpeaking.addListener(() {
-      if (_voice.isSpeaking.value) {
-        _speechSilenceTimer?.cancel();
-        if (_phase != JarvisPhase.executing) {
-          _phase = JarvisPhase.speaking;
-          notifyListeners();
-        }
-      } else {
-        if (_phase == JarvisPhase.speaking) {
-          _phase = _executor.isBusy ? JarvisPhase.executing : JarvisPhase.idle;
-          notifyListeners();
-        }
-        // Continuous listening trigger: when speech output finishes, resume passive wake-word listening
-        if (_shouldListenContinuously) {
-          if (_isAwake) {
-            _keepAwake();
-          }
-          startListening();
-        }
-      }
-    });
+    _voice.isSpeaking.addListener(_onSpeakingChanged);
 
-    _voice.listeningNotifier.addListener(() {
-      if (!_voice.listeningNotifier.value) {
-        if (_phase == JarvisPhase.listening) {
-          _phase = _executor.isBusy ? JarvisPhase.executing : JarvisPhase.idle;
-          notifyListeners();
-        }
-      }
-    });
+    _voice.listeningNotifier.addListener(_onListeningChanged);
 
-    _executor.addListener(() {
-      if (_phase == JarvisPhase.executing) {
-        _currentStep = _executor.step;
-        if (!_executor.isBusy) {
-          _currentStep = 0;
-          _currentTaskGoal = null;
-          _phase =
-              _voice.isSpeaking.value ? JarvisPhase.speaking : JarvisPhase.idle;
-          notifyListeners();
-          if (_shouldListenContinuously) {
-            startListening();
-          }
-        }
-      } else {
-        notifyListeners();
-      }
-    });
+    _executor.addListener(_onExecutorChanged);
 
     if (isAlwaysOn) {
       ensureAlwaysOnRunning();
+    }
+  }
+
+  // Listener callbacks are named methods (not inline closures) so dispose() can
+  // detach them from the process-wide voice notifiers.
+
+  void _onSoundLevelChanged() {
+    _soundLevel = _voice.soundLevel.value;
+    notifyListeners();
+  }
+
+  void _onSpeechStatus(String status) {
+    if (status == 'endOfSpeech') {
+      if (_isAwake && _lastUserSpeech.isNotEmpty) {
+        _speechSilenceTimer?.cancel();
+        _speechSilenceTimer = Timer(const Duration(milliseconds: 350), () {
+          final trimmed = _lastUserSpeech.trim();
+          if (trimmed.isNotEmpty) {
+            unawaited(_handleSpeechResult(trimmed));
+          }
+        });
+      }
+    }
+  }
+
+  void _onSpeakingChanged() {
+    if (_voice.isSpeaking.value) {
+      _speechSilenceTimer?.cancel();
+      if (_phase != JarvisPhase.executing) {
+        _phase = JarvisPhase.speaking;
+        notifyListeners();
+      }
+    } else {
+      if (_phase == JarvisPhase.speaking) {
+        _phase = _executor.isBusy ? JarvisPhase.executing : JarvisPhase.idle;
+        notifyListeners();
+      }
+      // Continuous listening trigger: when speech output finishes, resume passive wake-word listening
+      // U1: only when the user opted in — otherwise the mic stays closed.
+      if (_shouldListenContinuously && _canAutoListen) {
+        if (_isAwake) {
+          _keepAwake();
+        }
+        startListening();
+      }
+    }
+  }
+
+  void _onListeningChanged() {
+    if (!_voice.listeningNotifier.value) {
+      if (_phase == JarvisPhase.listening) {
+        _phase = _executor.isBusy ? JarvisPhase.executing : JarvisPhase.idle;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _onExecutorChanged() {
+    if (_phase == JarvisPhase.executing) {
+      _currentStep = _executor.step;
+      if (!_executor.isBusy) {
+        _currentStep = 0;
+        _currentTaskGoal = null;
+        _phase =
+            _voice.isSpeaking.value ? JarvisPhase.speaking : JarvisPhase.idle;
+        notifyListeners();
+        // U1: never reopen the mic after a task unless always-on is enabled.
+        if (_shouldListenContinuously && _canAutoListen) {
+          startListening();
+        }
+      }
+    } else {
+      notifyListeners();
     }
   }
 
@@ -254,20 +277,51 @@ class JarvisService extends ChangeNotifier {
     });
   }
 
-  void _standDown() {
+  /// Cancels every timer this service owns.
+  ///
+  /// All five timers are lifecycle-scoped: if any survives a teardown its
+  /// callback still runs (flipping phase, standing down, resuming listening)
+  /// after the user has left the voice loop.
+  void _cancelAllTimers() {
+    _awakeTimer?.cancel();
+    _awakeTimer = null;
     _speechSilenceTimer?.cancel();
-    _proactiveConfirmationTimer?.cancel();
+    _speechSilenceTimer = null;
     _followUpSilenceTimer?.cancel();
+    _followUpSilenceTimer = null;
+    _proactiveConfirmationTimer?.cancel();
+    _proactiveConfirmationTimer = null;
+  }
+
+  void _standDown() {
+    _cancelAllTimers();
     _isInFollowUp = false;
     _pendingProactiveSuggestion = null;
     _isAwake = false;
-    _awakeTimer?.cancel();
     _lastUserSpeech = '';
     _statusMessage = _shouldListenContinuously
         ? 'STANDBY // SAY "HEY JARVIS"'
         : 'READY // TAP TO TALK';
     _phase = JarvisPhase.idle;
     notifyListeners();
+  }
+
+  /// Releases timers and detaches every listener.
+  ///
+  /// [JarvisService] is a process-wide singleton, so this is not called on
+  /// normal navigation; it exists for the service-stop path (and tests). After
+  /// it runs, [init] can re-arm the service because `_initialized` is reset.
+  @override
+  void dispose() {
+    _cancelAllTimers();
+    ProactiveAgentService.instance.stopProactiveMonitor();
+    _voice.soundLevel.removeListener(_onSoundLevelChanged);
+    _voice.isSpeaking.removeListener(_onSpeakingChanged);
+    _voice.listeningNotifier.removeListener(_onListeningChanged);
+    _executor.removeListener(_onExecutorChanged);
+    _voice.onSpeechStatus = null;
+    _initialized = false;
+    super.dispose();
   }
 
   /// Engages immediate hands-free follow-up continuous listening after speaking.
@@ -294,6 +348,9 @@ class JarvisService extends ChangeNotifier {
   void _onFollowUpTimeout() {
     _followUpSilenceTimer?.cancel();
     _isInFollowUp = false;
+    // A1: the "which number, sir?" window is over. A late answer must not be
+    // applied to a question the user can no longer see or hear.
+    DeviceControlService.instance.cancelPendingContactChoice();
     _standDown();
     if (!_shouldListenContinuously) {
       stopListening();
@@ -389,6 +446,22 @@ class JarvisService extends ChangeNotifier {
 
   String? _extractWakeCommand(String speech) => extractWakeCommand(speech);
 
+  /// A7 — may this transcript be treated as a command?
+  ///
+  /// True when the session was started by the user (button tap), or JARVIS is
+  /// already awake, or the wake word was actually spoken. False for ambient
+  /// room speech picked up by the always-on restart loop.
+  ///
+  /// Extracted from the `onResult` callback so the rule is testable without a
+  /// microphone: the callback used to inline `!manual && !_isAwake && !hasWake`
+  /// and that exact expression was the bug (it ignored session origin).
+  static bool acceptAmbientTranscript({
+    required bool fromManualSession,
+    required bool isAwake,
+    required bool hasWakeWord,
+  }) =>
+      fromManualSession || isAwake || hasWakeWord;
+
   /// Displays a modal dialog safely using the global navigation key.
   void _showModalSafely(Widget dialog) {
     try {
@@ -409,9 +482,14 @@ class JarvisService extends ChangeNotifier {
   void onEnterJarvisMode() {
     _isInJarvisMode = true;
     _standDown();
-    startListening();
-    // Arm mid-air proximity sensor for zero-touch gestures while in JARVIS mode
-    unawaited(AirGestureService.instance.start());
+    // U1: navigating into the HUD is not a request to listen. The microphone
+    // only opens on an explicit tap, or when always-on listening is enabled.
+    if (_canAutoListen) {
+      startListening();
+    }
+    // M4: air gestures are armed only by an explicit toggle. Arming them here
+    // made a pocketed / in-call phone register proximity "gestures" and toggle
+    // media at random.
     _statusMessage = 'STANDBY // SAY "HEY JARVIS"';
     notifyListeners();
   }
@@ -628,6 +706,24 @@ class JarvisService extends ChangeNotifier {
         // automatically trigger command processing so the user never gets stuck waiting on Android's silence detector!
         final hasWake = _extractWakeCommand(words) != null ||
             candidates.any((c) => _extractWakeCommand(c) != null);
+
+        // A7: an auto-started (always-on) session may only become a command when
+        // the wake word was actually spoken. A tapped session is always the user
+        // talking to the assistant, so it is never filtered. Without this, the
+        // recogniser restart loop in MainActivity fed ordinary room speech into
+        // the LLM — the reported "mic opens when I just talk" behaviour.
+        final fromManualSession = _voice.lastSessionWasManual || manual;
+        if (!acceptAmbientTranscript(
+          fromManualSession: fromManualSession,
+          isAwake: _isAwake,
+          hasWakeWord: hasWake,
+        )) {
+          debugPrint(
+            '[JarvisService] Ambient speech ignored (auto session, no wake word): "$words"',
+          );
+          return;
+        }
+
         if (_isAwake || hasWake) {
           _speechSilenceTimer?.cancel();
           _speechSilenceTimer = Timer(const Duration(milliseconds: 950), () {
@@ -779,9 +875,9 @@ class JarvisService extends ChangeNotifier {
 
   /// Stops voice input.
   Future<void> stopListening() async {
-    _followUpSilenceTimer?.cancel();
+    // Mic-off is a teardown boundary: no timer may outlive it.
+    _cancelAllTimers();
     _isInFollowUp = false;
-    _speechSilenceTimer?.cancel();
     await _voice.stopListening();
     if (_phase == JarvisPhase.listening) {
       _phase = _executor.isBusy ? JarvisPhase.executing : JarvisPhase.idle;
@@ -795,6 +891,8 @@ class JarvisService extends ChangeNotifier {
   /// Aborts any running task immediately.
   Future<void> abortTask() async {
     _standDown();
+    // A1: an abort also abandons a half-answered contact question.
+    DeviceControlService.instance.cancelPendingContactChoice();
     if (_executor.isBusy) {
       _executor.cancel();
       _phase = JarvisPhase.speaking;
@@ -819,6 +917,32 @@ class JarvisService extends ChangeNotifier {
 
     final trimmed = command.trim();
     if (trimmed.isEmpty) return;
+
+    // A1: the answer to "which number, sir?" is not a new command. Consume it
+    // before any intent routing so digits never reach the LLM router.
+    if (DeviceControlService.instance.hasPendingContactChoice) {
+      final choice =
+          await DeviceControlService.instance.continuePendingContactChoice(trimmed);
+      if (choice.spoken.isNotEmpty) {
+        _lastJarvisSpeech = choice.spoken;
+        _phase = JarvisPhase.speaking;
+        _statusMessage = choice.success
+            ? 'CONTACT RESOLVED // CONNECTING'
+            : 'AWAITING CONTACT CHOICE';
+        notifyListeners();
+        await _voice.speak(choice.spoken);
+
+        if (DeviceControlService.instance.hasPendingContactChoice) {
+          // Still ambiguous: keep the mic open for the next digit answer.
+          await _startFollowUpListening();
+        } else {
+          _standDown();
+        }
+        return;
+      }
+      // Not an answer after all — the pending question was dropped and the
+      // utterance is handled as a normal command below.
+    }
 
     _lastUserSpeech = trimmed;
     _phase = JarvisPhase.thinking;
@@ -1807,7 +1931,11 @@ Mastering the boundless road.
               break;
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          // A13: the auto-click step is best-effort, but a failure here means
+          // the song will play without being selected — worth a log line.
+          debugPrint('[JarvisService] play-song screen tap skipped: $e');
+        }
       }
       await _voice.notifyMediaPlaybackStarted(duration: const Duration(seconds: 60));
       if (_shouldListenContinuously) _standDown();
@@ -2852,6 +2980,18 @@ Mastering the boundless road.
           _phase = JarvisPhase.speaking;
           _statusMessage = 'DEVICE CONTROL EXECUTED';
           notifyListeners();
+        } else if (deviceResult.raw['requiresChoice'] == true) {
+          // A1: several contacts share the name. Speak the read-back, keep the
+          // mic open, and let the next utterance pick a number. This is a
+          // question, not a blocked permission — no security alert.
+          spoken = deviceResult.spoken;
+          _lastJarvisSpeech = spoken;
+          _phase = JarvisPhase.speaking;
+          _statusMessage = 'CONTACT CHOICE // AWAITING DIGITS';
+          notifyListeners();
+          await _voice.speak(spoken);
+          await _startFollowUpListening();
+          return;
         } else if (deviceResult.spoken.isEmpty) {
           // Not a device command after all: delegate to the UI automation agent.
           final goal = trimmed;

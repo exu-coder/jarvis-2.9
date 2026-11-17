@@ -1,0 +1,25 @@
+diff --git a/android/key.properties.example b/android/key.properties.example
+new file mode 100644
+index 0000000..121d41f
+--- /dev/null
++++ b/android/key.properties.example
+@@ -0,0 +1,19 @@
++# C4: template for release signing. Copy to android/key.properties and fill in.
++#
++#   cp android/key.properties.example android/key.properties
++#
++# NEVER commit android/key.properties or the .jks itself — add both to
++# .gitignore. Passwords can alternatively be supplied through the environment
++# (JARVIS_KEYSTORE_PASSWORD, JARVIS_KEY_PASSWORD, JARVIS_KEY_ALIAS,
++# JARVIS_KEYSTORE_FILE), which is preferable for CI.
++#
++# Create the keystore once:
++#   keytool -genkeypair -v -keystore ~/jarvis-release.jks \
++#           -alias jarvis -keyalg RSA -keysize 2048 -validity 10000
++#
++# storeFile may be absolute or relative to the android/ directory.
++
++storeFile=/absolute/path/to/jarvis-release.jks
++storePassword=<REDACTED>
++keyAlias=jarvis
++keyPassword=<REDACTED>

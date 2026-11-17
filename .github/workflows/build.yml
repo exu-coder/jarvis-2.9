@@ -29,8 +29,12 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # No hard-pinned version: pinning rots (the pinned build disappears
+          # from the channel index and CI stops resolving) and it silently
+          # diverges from local `flutter` versions. Trade-off, documented in
+          # NOTES.md (L9): stable is reproducible enough for a personal build,
+          # and `flutter --version` is logged below for the record.
           channel: stable
-          flutter-version: '3.50.0'
           cache: true
 
       - name: Flutter version
@@ -38,6 +42,12 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
 
       - name: Build debug APK
         run: flutter build apk --debug

@@ -1,0 +1,83 @@
+diff --git a/lib/services/smart_home_service.dart b/lib/services/smart_home_service.dart
+index c88e142..98e622b 100644
+--- a/lib/services/smart_home_service.dart
++++ b/lib/services/smart_home_service.dart
+@@ -96,6 +96,10 @@ class SmartHomeService extends ChangeNotifier {
+   }
+ 
+   /// Refreshes the list of smart home entities from `/api/states`.
++  ///
++  /// On failure the previously loaded (real) entities are kept and the reason
++  /// is exposed through [lastError]. Placeholder devices are never inserted —
++  /// toggling a phantom light is worse than showing an empty list.
+   Future<List<SmartDeviceEntity>> refreshEntities() async {
+     final settings = SettingsService.instance;
+     final base = _cleanUrl(settings.homeAssistantUrl);
+@@ -109,7 +113,7 @@ class SmartHomeService extends ChangeNotifier {
+       if (res.statusCode == 200) {
+         final decoded = jsonDecode(res.body);
+         if (decoded is List) {
+-          _entities.clear();
++          final parsed = <SmartDeviceEntity>[];
+           for (final item in decoded) {
+             if (item is Map) {
+               final id = item['entity_id']?.toString() ?? '';
+@@ -119,7 +123,7 @@ class SmartHomeService extends ChangeNotifier {
+                 final attrs = (item['attributes'] as Map?)?.cast<String, dynamic>() ?? {};
+                 final name = attrs['friendly_name']?.toString() ?? id;
+                 final state = item['state']?.toString() ?? 'unknown';
+-                _entities.add(SmartDeviceEntity(
++                parsed.add(SmartDeviceEntity(
+                   entityId: id,
+                   friendlyName: name,
+                   state: state,
+@@ -128,33 +132,26 @@ class SmartHomeService extends ChangeNotifier {
+               }
+             }
+           }
+-          notifyListeners();
++          // Only replace the cache once the response actually parsed.
++          _entities
++            ..clear()
++            ..addAll(parsed);
++          _lastError = parsed.isEmpty
++              ? 'Home Assistant returned no light/switch/scene entities.'
++              : null;
++        } else {
++          _lastError = 'Unexpected Home Assistant payload for /api/states.';
++          debugPrint('[SmartHomeService] $_lastError');
+         }
++        notifyListeners();
++      } else {
++        _lastError = 'Home Assistant returned HTTP ${res.statusCode} for /api/states.';
++        debugPrint('[SmartHomeService] $_lastError');
++        notifyListeners();
+       }
+     } catch (e) {
+       debugPrint('[SmartHomeService] Refresh entities error: $e');
+-    }
+-
+-    if (_entities.isEmpty) {
+-      // Provide standard default entities for offline/demo configuration
+-      _entities.clear();
+-      _entities.addAll([
+-        const SmartDeviceEntity(
+-          entityId: 'light.living_room',
+-          friendlyName: 'Living Room Lights',
+-          state: 'off',
+-        ),
+-        const SmartDeviceEntity(
+-          entityId: 'light.desk_lamp',
+-          friendlyName: 'Desk Lamp',
+-          state: 'off',
+-        ),
+-        const SmartDeviceEntity(
+-          entityId: 'scene.cinema_mode',
+-          friendlyName: 'Cinema Mode Scene',
+-          state: 'scening',
+-        ),
+-      ]);
++      _lastError = 'Unable to reach Home Assistant at $base: $e';
+       notifyListeners();
+     }
+ 

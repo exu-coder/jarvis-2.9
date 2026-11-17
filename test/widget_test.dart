@@ -183,22 +183,25 @@ void main() {
       final settings = SettingsService.instance;
       await settings.init();
 
-      expect(settings.jarvisAlwaysOn, isTrue);
+      // H10: defaults are privacy-safe (opt-in). The previous expectations
+      // asserted `true` here while the implementation defaults both flags to
+      // `false`, so the test could never pass and CI never ran it.
+      expect(settings.jarvisAlwaysOn, isFalse);
       expect(settings.jarvisVoice, 'paul');
       expect(settings.jarvisNeuralVoice, 'en-GB-RyanNeural');
-      expect(settings.useNeuralVoice, isTrue);
+      expect(settings.useNeuralVoice, isFalse);
       expect(settings.jarvisWorkflowsEnabled, isTrue);
 
-      await settings.setJarvisAlwaysOn(false);
+      await settings.setJarvisAlwaysOn(true);
       await settings.setJarvisVoice('friday');
       await settings.setJarvisNeuralVoice('en-US-GuyNeural');
-      await settings.setUseNeuralVoice(false);
+      await settings.setUseNeuralVoice(true);
       await settings.setJarvisWorkflowsEnabled(false);
 
-      expect(settings.jarvisAlwaysOn, isFalse);
+      expect(settings.jarvisAlwaysOn, isTrue);
       expect(settings.jarvisVoice, 'friday');
       expect(settings.jarvisNeuralVoice, 'en-US-GuyNeural');
-      expect(settings.useNeuralVoice, isFalse);
+      expect(settings.useNeuralVoice, isTrue);
       expect(settings.jarvisWorkflowsEnabled, isFalse);
     });
 

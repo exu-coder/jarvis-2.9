@@ -1,0 +1,112 @@
+diff --git a/README.md b/README.md
+index 6c2120f..951a1db 100644
+--- a/README.md
++++ b/README.md
+@@ -12,7 +12,7 @@
+ [![Android](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--15)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+ [![Release](https://img.shields.io/badge/Release-v1.1.0-blue?style=for-the-badge&logo=github)](https://github.com/exu-coder/jarvis-2.9/releases)
+ [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
+-[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local--First-00E5FF?style=for-the-badge&logo=shield&logoColor=black)](https://ollama.com)
++[![Privacy](https://img.shields.io/badge/Privacy-No%20Trackers%20%C2%B7%20Cloud%20or%20Local-00E5FF?style=for-the-badge&logo=shield&logoColor=black)](https://ollama.com)
+ [![Hermes](https://img.shields.io/badge/Hermes-Self--Evolving%20Engine-BA68C8?style=for-the-badge&logo=openai&logoColor=white)](https://nousresearch.com)
+ [![UI](https://img.shields.io/badge/Design-Liquid%20Glass%20HUD-6366F1?style=for-the-badge&logo=material-design&logoColor=white)](https://flutter.dev)
+ [![TTS](https://img.shields.io/badge/Audio-Microsoft%20Studio%20Neural-FFB300?style=for-the-badge&logo=microsoftexcel&logoColor=black)](https://azure.microsoft.com)
+@@ -35,7 +35,7 @@ Unlike conventional voice assistants that merely return web searches or canned v
+ - **Project Dual Cinematic 3D Holograms**: Render an interactive gyroscopic Arc Reactor consciousness core or a translucent 3D Iron Man hologram suit bust with dynamic audio-reactive aura colors.
+ - **Sense Your Physical Environment**: Detect mid-air hand gestures using optical proximity hardware, monitor room movement using accelerometer watchdog sentries, and calculate aircraft overhead via ADS-B telemetry.
+ - **Evolve and Self-Improve (Hermes Engine)**: Distill repetitive app interactions into executable macro skills and persist learned operator preferences across `SOUL.md`, `USER.md`, and `AGENT.md` context files.
+-- **Guarantee Complete Privacy**: Built with a strict **Local-First Privacy Architecture** with zero embedded trackers, zero telemetry analytics, and complete compatibility with fully offline, on-device Ollama instances.
++- **Ship No Telemetry**: no embedded trackers, no analytics SDKs, no crash reporters. Prompts go only to the provider you configure — **DeepSeek (cloud) is the default**; switch the provider to **Ollama** for fully on-device inference, which is the only mode where nothing leaves the phone.
+ 
+ ---
+ 
+@@ -48,8 +48,8 @@ Release **v1.1.0** introduces **The Autonomous Triad** upgrade:
+    - **Multi-Vector Parallel Execution**: Dictate or type complex compound requests (e.g., *"Set a reminder for 5 PM, text Sarah I'm 10 mins late, add eggs to my todo, calculate 25% of 600, and turn on the flashlight"*). Deconstructs intents into parallel async futures with consolidated vocal executive briefings.
+    - **Expanded Directives**: Added direct hardware execution for device actions (torch/flashlight, volume up/down, mute, screenshots) alongside reminders, drafts, todos, notes, and calculations.
+ 
+-2. 🎙️ **Always-On Hands-Free Continuous Listening**:
+-   - **Live HUD Receptor Toggle**: Directly switch between Always-On continuous listening and Standby mode right from the HUD action dock with a glowing status ring.
++2. 🎙️ **Always-On Hands-Free Continuous Listening** *(opt-in — off by default)*:
++   - **Live HUD Receptor Toggle**: Directly switch between Always-On continuous listening and Standby mode right from the HUD action dock with a glowing status ring. Always-on starts disabled (`jarvisAlwaysOn = false`) so the microphone is never hot until you turn it on.
+    - **Ambient Noise Filtering**: Uses acoustic RMS silence boundary detection and low-power passive listening for wake words (`"Hey Jarvis"`, `"Jarvis"`, `"Hello Jarvis"`).
+    - **Conversational Continuation Window**: Automatically keeps audio receptors open for 7.5 seconds after speaking for frictionless follow-up queries without repeating the wake word.
+    - **Full Voice Control**: Hands-free voice toggles anytime with *"Always on"*, *"Hands free"*, or *"Turn off always on"*.
+@@ -163,7 +163,7 @@ Both HUD modes continuously monitor acoustic volume and processing phases, smoot
+ ```
+ 
+ ### 1. ⚡ J.A.R.V.I.S. Mode (Hands-Free Voice & Cyber HUD)
+-- **Wake Word Listening**: Responds instantly to *"Hey Jarvis"*, *"Jarvis"*, *"Hello Jarvis"*, or *"OK Jarvis"*.
++- **Wake Word Listening** *(opt-in)*: Responds to *"Hey Jarvis"*, *"Jarvis"*, *"Hello Jarvis"*, or *"OK Jarvis"* once Always-On listening is enabled from the HUD dock or via *"Always on"*. It is off by default — press-to-talk works without it.
+ - **Continuous Desk Assistant**: Keep your phone on your desk or wireless dock; issue commands fluidly without pressing a button.
+ - **Acoustic Focus Protection**: Intelligently suspends voice recognition when playing music or videos, preventing media audio from interrupting itself.
+ 
+@@ -428,20 +428,47 @@ J.A.R.V.I.S. provides a dedicated **Permissions Hub** in **Settings > App Permis
+ > [!TIP]
+ > **Battery Optimization Exemption**: For seamless hands-free wake word recognition while your screen is off, grant **"Unrestricted Battery Usage"** to J.A.R.V.I.S. in Android Settings.
+ 
++### ⚠️ Sensitive capability disclosure (M12)
++
++J.A.R.V.I.S. legitimately asks for the same combination of capabilities that
++stalkerware uses: **Accessibility Service** (reads the screen, performs taps),
++**Notification Listener** (reads email/SMS bodies), **Device Administrator**
++(lock screen / wipe), plus SMS, call log, contacts and location.
++
++That combination is exactly why Google Play Protect warns about apps like this,
++and why the permission list was pruned (see `patches/security/NOTES.md`, C6).
++Concretely, in this build:
++
++- Every one of the remaining permissions has a call site in `lib/` or
++  `android/app/src/main/kotlin/`; anything without one was removed.
++- `MANAGE_EXTERNAL_STORAGE` stays because the file tool writes to real
++  Downloads/Documents paths. It is a Play-policy-restricted permission, so this
++  app is a **personal sideload**, not a Play Store submission.
++- Nothing is granted silently: each special access is requested from the
++  Permissions Hub and can be revoked at any time in Android Settings.
++- Accessibility node dumps and notification bodies are held in memory only for
++  the duration of a task; notification bodies are additionally purged on screen
++  off and capped (M6).
++- SMS and outbound calls are behind an explicit native confirmation gate (H5),
++  so the LLM cannot dial or text without a human approving it.
++
++If you install this on someone else's device, that is spyware. Don't.
++
+ ---
+ 
+ ## 🛠️ Build & Installation Instructions
+ 
+ ### Prerequisites
+-- **Flutter SDK**: `^3.12.2` or newer
++- **Flutter SDK**: stable channel, Dart `^3.12.2` or newer (the constraint comes from `pubspec.yaml`'s `environment.sdk`)
+ - **Android SDK**: Compile SDK `35`, Min SDK `26` (Android 8.0+)
+ - **Java / JDK**: OpenJDK 17 or newer
+ 
+ ### 1. Clone the Repository
+ ```bash
+-git clone https://github.com/your-username/jarvis-android.git
+-cd jarvis-android
++git clone https://github.com/exu-coder/jarvis-2.9.git
++cd jarvis-2.9
+ ```
++> Version reality check: `pubspec.yaml` declares `1.1.0+2`, the release badge above tracks `1.1.0`, and the repository name (`jarvis-2.9`) is just a repository name. Only `pubspec.yaml` is authoritative for the built APK.
+ 
+ ### 2. Install Flutter Dependencies
+ ```bash
+@@ -473,7 +500,7 @@ adb install -r build/app/outputs/flutter-apk/app-release.apk
+ ## 📂 Codebase Architecture & Directory Map
+ 
+ ```
+-Jarvis/
++jarvis-2.9/
+ ├── android/                                    # Native Android host layer
+ │   └── app/src/main/
+ │       ├── AndroidManifest.xml                 # Services, receivers & permission manifest
+@@ -491,7 +518,8 @@ Jarvis/
+ │   ├── overlay/
+ │   │   └── overlay_app.dart                    # System-wide floating Arc Reactor overlay
+ │   ├── screens/
+-│   │   ├── home/home_screen.dart               # Mode switcher & primary container
++│   │   ├── hud/hud_home_screen.dart            # Mode switcher & primary HUD container
++│   │   ├── sessions/session_detail_screen.dart # Task session transcript & history detail
+ │   │   ├── onboarding/onboarding_screen.dart   # Interactive feature walkthrough
+ │   │   ├── security/code_black_screen.dart     # Deceptive kernel panic lockout UI
+ │   │   └── settings/                           # J.A.R.V.I.S. settings & permissions hub
