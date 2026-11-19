@@ -545,3 +545,38 @@ A green build is not a working phone. Untested on a device:
 | 5 | `9092505` | Test | `FlutterTts` needs an initialised binding |
 | 6 | `cb277bc` | Build debug APK | `destroyQuietly(View?)` vs `WebView?` |
 | 7 | `8d2009c` | — | **success** |
+
+### 12.1 Why `main` at `9bc7592` has no CI run
+
+`9bc7592` (the commit that added §12) touched **only** `VERIFICATION.md`, and
+`build.yml` deliberately filters triggers:
+
+```yaml
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.dart'
+      - 'pubspec.yaml'
+      - 'assets/**'
+      - 'android/**'
+      - 'lib/**'
+      - '.github/workflows/build.yml'
+```
+
+A documentation commit matches none of those patterns, so GitHub correctly
+creates no run. There is no queued or skipped run to wait for.
+
+The authoritative validation of the current tree is therefore
+**run 44474956463 on `8d2009c`**, and the only delta between `8d2009c` and
+`main` is this document:
+
+```
+$ git diff --stat 8d2009c main
+ VERIFICATION.md | 51 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+```
+
+That is the intended trade-off: docs do not burn a four-minute Android build,
+and a docs-only commit cannot invalidate a green code run. If a full re-run is
+wanted anyway, use **Actions → Build APK → Run workflow**
+(`workflow_dispatch` is enabled).
