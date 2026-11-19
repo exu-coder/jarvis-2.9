@@ -364,3 +364,53 @@ the default so the provider is usable without credit. Adding the entry required
 no change to `ai_service.dart` — the two provider-specific branches there
 (`ollama` for keyless local use, `openrouter` for its referer headers) do not
 apply to Zen.
+
+---
+
+## 10. CI run 4 (`30087ca`): Analyze passed, Test failed
+
+| step | result |
+|---|---|
+| 6 Install dependencies | ✅ |
+| 7 **Analyze** | ✅ **first green analyze** — the 836 issues are gone |
+| 8 Test | ❌ 64 passed, 2 failed |
+| 9 Build debug APK | skipped |
+
+Both failures were `TimeoutException after 0:10:00` — *not* assertion failures — in
+`test/widget_test.dart`:
+
+```
+❌ app boots into onboarding on first run        → timed out after 10 minutes
+❌ custom Ollama model survives unrelated …      → timed out after 10 minutes
+```
+
+### Why they hung
+
+- `pumpAndSettle()` never settles: the home HUD and the onboarding wizard are
+  **WebViews** (`assets/hud/uI.html`, `assets/hud/onboarding.html`) with a
+  looping animation, so frames are always scheduled.
+- They also asserted strings that do not exist anywhere in the tree
+  (`'Meet J.A.R.V.I.S.'`, `'Continue'`, `'Save changes'`). Even with a bounded
+  pump they would have failed: a WebView exposes no Flutter text to `find.text`.
+
+These two tests had never run in CI before — `flutter test` was only added to the
+workflow by this patch set (L8), and the previous green run predates it. They were
+written against an imagined native-widget UI.
+
+### Fix
+
+Replaced with two plain `test()`s that assert the same invariants where they
+actually live, in `SettingsService`:
+
+1. `a fresh install is not marked as onboarded` — `onboardingComplete` defaults
+   to false, so first run lands on the wizard, not the HUD without a key.
+2. `a custom model survives unrelated settings changes` — `setProvider('ollama')`
+   fills `llama3.2`, `setModel('qwen2.5:7b')` sticks through
+   `setAppMode`/`setUseSystemPrompt`/`setTemperature`, and only re-selecting the
+   provider resets it. This is the actual regression the widget test was aiming
+   at; the visual half is untestable without a WebView engine.
+
+Removed the now-unused imports (`flutter/material.dart`, `app.dart`,
+`settings_screen.dart`) so the analyzer stays clean.
+
+Nothing was executed locally; run 5 is the verification.
