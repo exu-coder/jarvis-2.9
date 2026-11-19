@@ -450,3 +450,47 @@ Fix: `TestWidgetsFlutterBinding.ensureInitialized()` as the first statement of
 `main()`, with a comment explaining the dependency. This is the second-order
 effect of the §10 rewrite — the tests are order-dependent in a way that was
 invisible while they hung.
+
+---
+
+## 11. CI run 7 (`cb277bc`): Analyze ✅, Test ✅, Gradle build ❌
+
+First time `Build debug APK` ever ran. Analyze and Test are both green
+(66 tests). Gradle failed at `:app:compileDebugKotlin`:
+
+```
+e: BubbleOverlayService.kt:371:28 Argument type mismatch:
+   actual type is 'View?', but 'WebView?' was expected.
+e: BubbleOverlayService.kt:466:28 Argument type mismatch:
+   actual type is 'View?', but 'WebView?' was expected.
+```
+
+### Cause
+
+A genuine defect in the renderer-leak fix (M-series). `destroyQuietly` was
+declared as `fun destroyQuietly(webView: WebView?)`, but the collapsed orb is
+held as `private var orbWindow: View?` (it is swapped for a plain view once the
+panel opens), while the panel is `WebView?`. So the two orb call sites —
+`expand()` and `teardown()` — passed a `View?` to a `WebView?` parameter.
+
+Kotlin reports every error in a module before failing, and both errors were in
+this one function pair, so no other Kotlin file was implicated.
+
+### Fix
+
+```kotlin
+private fun destroyQuietly(view: View?) {
+    try {
+        (view as? WebView)?.destroy()
+    } catch (_: Exception) {
+    }
+}
+```
+
+`View?` admits both call sites; the `as? WebView` keeps the original intent —
+only a real `WebView` has a renderer to release, and a plain `View` is a no-op
+rather than a crash.
+
+Lesson for §1: the earlier "no compiler" caveat covered Dart, but the patch set
+also ships **Kotlin**, and the same class of type error was sitting there
+uncompiled. `flutter analyze` does not look at `android/**`.

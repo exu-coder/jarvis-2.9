@@ -706,7 +706,7 @@ index c8b3fca..e8ce82c 100644
          val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
          if (!prefs.getBoolean(PREF_AUTOSTART, false)) return
 diff --git a/android/app/src/main/kotlin/com/jarvis/dev/BubbleOverlayService.kt b/android/app/src/main/kotlin/com/jarvis/dev/BubbleOverlayService.kt
-index 4f6e009..2e66075 100644
+index 4f6e009..29befc3 100644
 --- a/android/app/src/main/kotlin/com/jarvis/dev/BubbleOverlayService.kt
 +++ b/android/app/src/main/kotlin/com/jarvis/dev/BubbleOverlayService.kt
 @@ -360,12 +360,15 @@ border:1px solid rgba(66,232,255,.5);padding:10px 16px}
@@ -728,7 +728,7 @@ index 4f6e009..2e66075 100644
  
              val width = min(screenW - (16 * density).toInt(), (390 * density).toInt())
              val height = min((screenH * 0.72f).toInt(), (640 * density).toInt())
-@@ -430,39 +433,59 @@ border:1px solid rgba(66,232,255,.5);padding:10px 16px}
+@@ -430,39 +433,64 @@ border:1px solid rgba(66,232,255,.5);padding:10px 16px}
      private fun collapse() {
          if (panelWindow == null) return
          mainHandler.post {
@@ -774,9 +774,14 @@ index 4f6e009..2e66075 100644
 +        }
 +    }
 +
-+    private fun destroyQuietly(webView: WebView?) {
++    // Destroys a detached web view so its Chromium renderer is released.
++    //
++    // Takes `View?` because the collapsed orb is held as a `View` (it is
++    // swapped for a plain view once the panel takes over); only actual
++    // `WebView`s have a renderer to destroy.
++    private fun destroyQuietly(view: View?) {
 +        try {
-+            webView?.destroy()
++            (view as? WebView)?.destroy()
 +        } catch (_: Exception) {
          }
      }

@@ -467,9 +467,14 @@ border:1px solid rgba(66,232,255,.5);padding:10px 16px}
         }
     }
 
-    private fun destroyQuietly(webView: WebView?) {
+    // Destroys a detached web view so its Chromium renderer is released.
+    //
+    // Takes `View?` because the collapsed orb is held as a `View` (it is
+    // swapped for a plain view once the panel takes over); only actual
+    // `WebView`s have a renderer to destroy.
+    private fun destroyQuietly(view: View?) {
         try {
-            webView?.destroy()
+            (view as? WebView)?.destroy()
         } catch (_: Exception) {
         }
     }
