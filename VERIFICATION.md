@@ -414,3 +414,15 @@ Removed the now-unused imports (`flutter/material.dart`, `app.dart`,
 `settings_screen.dart`) so the analyzer stays clean.
 
 Nothing was executed locally; run 5 is the verification.
+
+### 10.1 Regression introduced by the fix above (run 5)
+
+Removing `import 'package:flutter/material.dart'` from `test/widget_test.dart`
+was over-eager: `ThemeMode` is used by the theme-persistence test
+(`settings.setThemeMode(ThemeMode.dark)`), so run 5 failed `Analyze` with two
+`undefined_identifier` errors at `test/widget_test.dart:77:35` and `:78:34`.
+
+Only those two — nothing else in the file depended on `material.dart`; the
+widget-pumping tests were the rest of it. Import restored with a comment naming
+the call site. This is exactly the failure mode §1 warns about: a static edit
+looked complete and a compiler said otherwise. Run 6 is the verification.

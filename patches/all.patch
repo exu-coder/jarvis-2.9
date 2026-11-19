@@ -5621,11 +5621,13 @@ index be5802c..bb97300 100644
  
    # To add assets to your application, add an assets section, like this:
 diff --git a/test/widget_test.dart b/test/widget_test.dart
-index 28d7769..64afc30 100644
+index 28d7769..e7c4107 100644
 --- a/test/widget_test.dart
 +++ b/test/widget_test.dart
-@@ -1,11 +1,8 @@
--import 'package:flutter/material.dart';
+@@ -1,11 +1,11 @@
++// `ThemeMode` is used by the SettingsService theme test below; without this
++// import the analyzer reports `undefined_identifier` at the two call sites.
+ import 'package:flutter/material.dart';
  import 'package:flutter_test/flutter_test.dart';
  import 'package:shared_preferences/shared_preferences.dart';
  
@@ -5636,7 +5638,7 @@ index 28d7769..64afc30 100644
  import 'package:private_agent/services/jarvis_tools_service.dart';
  import 'package:private_agent/services/settings_service.dart';
  import 'package:private_agent/services/voice_service.dart';
-@@ -107,52 +104,51 @@ void main() {
+@@ -107,52 +107,51 @@ void main() {
      });
    });
  
@@ -5724,7 +5726,7 @@ index 28d7769..64afc30 100644
    });
  
    group('JARVIS & Hermes Workflow tests', () {
-@@ -183,22 +179,25 @@ void main() {
+@@ -183,22 +182,25 @@ void main() {
        final settings = SettingsService.instance;
        await settings.init();
  
