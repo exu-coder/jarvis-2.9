@@ -494,3 +494,54 @@ rather than a crash.
 Lesson for §1: the earlier "no compiler" caveat covered Dart, but the patch set
 also ships **Kotlin**, and the same class of type error was sitting there
 uncompiled. `flutter analyze` does not look at `android/**`.
+
+---
+
+## 12. Green build — run 44474956463 (`8d2009c`)
+
+Every gate passed, including the two that had never run before this effort:
+
+| # | step | result |
+|---|---|---|
+| 6 | Install dependencies (`flutter pub get`) | ✅ |
+| 7 | Analyze (`flutter analyze`) | ✅ |
+| 8 | Test (`flutter test`) | ✅ 66 tests |
+| 9 | **Build debug APK** | ✅ |
+| 10 | Upload APK artifact | ✅ `jarvis-2.9-debug-apk`, 90.2 MiB |
+
+### What the green run actually proves
+
+- `pub get` resolves: the `flutter_secure_storage ^11.2.0` / `share_plus ^13.3.0`
+  `win32` conflict is gone.
+- The Dart tree **compiles**: the `_api` → `_endpoint()` rewrite, the
+  `return await` changes, the new `AgentRouterService`, the Zen provider entry
+  and the test edits are all type-correct.
+- The **Kotlin** tree compiles: `destroyQuietly(View?)` fixed the last blocker,
+  so the manifest, `MainActivity`, `DeviceControlService`, the accessibility
+  service, the notification listener, `BootReceiver` and
+  `BubbleOverlayService` all build.
+- 66 tests pass, including the two replacements for the tests that used to hang.
+- An APK is produced and uploaded.
+
+### What it still does not prove
+
+A green build is not a working phone. Untested on a device:
+
+- `AgentRouterService` against real installed-app labels (the fuzzy match and
+  `InstalledApps.startApp` from a background context).
+- The Zen endpoint with a real key.
+- Anything in §2–§7 that needed a human: permission prompts, Telegram pairing,
+  contact disambiguation with duplicate names, the A7 wake-word gate with a live
+  microphone.
+
+### History of this remediation in CI
+
+| run | commit | failed at | cause |
+|---|---|---|---|
+| 1 | `2bfd82b` | Install dependencies | `flutter_secure_storage` `win32` conflict |
+| 2 | `13b3d60` | Analyze | 836 issues, 788 of them `patches/**` phantoms |
+| 3 | `30087ca` | Test | 2 tests hung 10 min each (WebView + `pumpAndSettle`) |
+| 4 | `f959ae8` | Analyze | `ThemeMode` lost with the `material.dart` import |
+| 5 | `9092505` | Test | `FlutterTts` needs an initialised binding |
+| 6 | `cb277bc` | Build debug APK | `destroyQuietly(View?)` vs `WebView?` |
+| 7 | `8d2009c` | — | **success** |
