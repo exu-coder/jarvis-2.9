@@ -6,8 +6,10 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../settings/permissions_screen.dart';
 import '../settings/settings_screen.dart';
+import '../../services/agent_router_service.dart';
 import '../../services/ai_service.dart';
 import '../../services/device_control_service.dart';
+import '../../services/settings_service.dart';
 import '../../services/voice_service.dart';
 
 /// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 HUD home — the `assets/hud/uI.html` arc-reactor interface
@@ -148,8 +150,8 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
     return PageRouteBuilder<T>(
       transitionDuration: const Duration(milliseconds: 260),
       reverseTransitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (_, __, ___) => page,
-      transitionsBuilder: (_, animation, __, child) {
+      pageBuilder: (_, _, _) => page,
+      transitionsBuilder: (_, animation, _, child) {
         final curved = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,
@@ -181,7 +183,16 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
         final job = _queue.removeAt(0);
         String reply;
         try {
-          reply = await AiService.instance.chat(message: job.text);
+          // Agent mode is the default: try the action router first so "open
+          // YouTube", "call mum" or "set an alarm" are executed instead of
+          // being answered with "switch to Agent mode" by the chat prompt.
+          // `route` returns null for ordinary conversation.
+          final direct =
+              SettingsService.instance.appMode == AppMode.chat
+                  ? null
+                  : await AgentRouterService.instance.route(job.text);
+          reply = direct?.spoken ??
+              await AiService.instance.chat(message: job.text);
         } catch (e) {
           reply = 'My apologies, sir — I could not reach the uplink ($e).';
         }

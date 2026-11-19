@@ -1,0 +1,12 @@
+diff --git a/lib/services/app_launcher_service.dart b/lib/services/app_launcher_service.dart
+index dae2bc0..be9e532 100644
+--- a/lib/services/app_launcher_service.dart
++++ b/lib/services/app_launcher_service.dart
+@@ -1,5 +1,6 @@
+ import 'package:android_intent_plus/android_intent.dart';
+-import 'package:installed_apps/app_info.dart';
++// `installed_apps.dart` re-exports AppInfo; the direct app_info.dart import was
++// redundant (analyzer: unnecessary_import).
+ import 'package:installed_apps/installed_apps.dart';
+ import 'package:url_launcher/url_launcher.dart';
+ 

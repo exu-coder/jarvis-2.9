@@ -455,3 +455,40 @@ message bodies — only the exception.
 
 Files: `01-ai_service.dart.patch`, `02-voice_service.dart.patch`,
 `03-jarvis_service.dart.patch`.
+
+---
+
+## Post-audit follow-ups (reported after the merge)
+
+### "Open an app" answered "switch to Agent mode"
+
+Two gates, both real:
+
+1. `hud_home_screen.dart` sent every HUD ask straight to
+   `AiService.instance.chat()`. That prompt says the model cannot act and should
+   tell the user to switch modes, so an app launch could never work from the
+   HUD.
+2. `task_executor.executeTask()` checked `isServiceEnabled()` before doing
+   anything, so even a launcher intent failed with "Accessibility service is
+   OFF".
+
+Fix: `agent_router_service.dart` (new) decides action vs conversation —
+`appLaunchTarget()` extracts `open/launch/start/run/switch to …`, `route()`
+executes it through `AppLauncherService`, and only then consults
+`DeviceControlService.executeCommand`. `hud_home_screen.dart` calls it first;
+`task_executor.dart` runs a pure launch as step 0, before the accessibility
+gate, and reassigns `status` before returning so `_finalize` records `success`.
+
+Agent mode was already the default; nothing honoured it. See
+`VERIFICATION.md` §9.1.
+
+Files: `08-agent_router_service.dart.patch`, `09-hud_home_screen.dart.patch`,
+`10-app_launcher_service.dart.patch` (plus `12-task_executor.dart.patch` in the
+security slice, which owns that file).
+
+### Provider "Zen Code"
+
+`settings_service.dart` gained `'zen'` → `https://opencode.ai/inference/openai/v1`,
+model `deepseek-v4.1-flash-free`. Endpoint and ids read from
+`GET …/models`, not guessed; it is plain OpenAI-compatible, so `ai_service.dart`
+needs no change. See `VERIFICATION.md` §9.2.

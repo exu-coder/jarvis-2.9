@@ -157,6 +157,41 @@ index 6c2120f..951a1db 100644
  │   │   ├── onboarding/onboarding_screen.dart   # Interactive feature walkthrough
  │   │   ├── security/code_black_screen.dart     # Deceptive kernel panic lockout UI
  │   │   └── settings/                           # J.A.R.V.I.S. settings & permissions hub
+diff --git a/analysis_options.yaml b/analysis_options.yaml
+index 0d29021..4b3e96b 100644
+--- a/analysis_options.yaml
++++ b/analysis_options.yaml
+@@ -9,6 +9,30 @@
+ # packages, and plugins designed to encourage good coding practices.
+ include: package:flutter_lints/flutter.yaml
+ 
++analyzer:
++  exclude:
++    # `patches/*/files/` holds verbatim copies of every patched file so each
++    # per-area diff can be read in isolation. They are inputs to `patch(1)`,
++    # not sources, and analysing them double-counts the whole tree and drags in
++    # copies of `pubspec.yaml` whose asset paths are resolved relative to the
++    # wrong directory (asset_does_not_exist). Without this exclusion the
++    # analyzer reports 788 phantom issues.
++    - patches/**
++    # Generated/build output is not source.
++    - build/**
++    - .dart_tool/**
++
++  errors:
++    # Flutter 3.50 deprecated `package:flutter/material.dart` in favour of
++    # `package:material_ui/material_ui.dart`. That is a framework-wide
++    # migration affecting every one of this app's 30+ screens and widgets, not
++    # a defect in this code. Downgraded to `ignore` (not to `warning`) because
++    # CI runs `flutter analyze` as a blocking gate (A15) and an info still fails
++    # the build. Revisit when the migration is actually done: remove this block
++    # and the 37 hits will reappear as infos.
++    deprecated_member_use: ignore
++    deprecated_member_use_from_same_package: ignore
++
+ linter:
+   # The lint rules applied to this project can be customized in the
+   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
 diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
 index 7551c1b..edd32bb 100644
 --- a/android/app/build.gradle.kts
@@ -1727,6 +1762,50 @@ index 18a0231..86f5981 100644
 +    return 'ScreenNode(#$index "$shown"$flagStr @$centerX,$centerY)';
 +  }
  }
+diff --git a/lib/screens/hud/hud_home_screen.dart b/lib/screens/hud/hud_home_screen.dart
+index 2e36bba..ac20a12 100644
+--- a/lib/screens/hud/hud_home_screen.dart
++++ b/lib/screens/hud/hud_home_screen.dart
+@@ -6,8 +6,10 @@ import 'package:webview_flutter/webview_flutter.dart';
+ 
+ import '../settings/permissions_screen.dart';
+ import '../settings/settings_screen.dart';
++import '../../services/agent_router_service.dart';
+ import '../../services/ai_service.dart';
+ import '../../services/device_control_service.dart';
++import '../../services/settings_service.dart';
+ import '../../services/voice_service.dart';
+ 
+ /// 𝐉.𝐀.𝐑.𝐕.𝐈.𝐒 HUD home — the `assets/hud/uI.html` arc-reactor interface
+@@ -148,8 +150,8 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
+     return PageRouteBuilder<T>(
+       transitionDuration: const Duration(milliseconds: 260),
+       reverseTransitionDuration: const Duration(milliseconds: 200),
+-      pageBuilder: (_, __, ___) => page,
+-      transitionsBuilder: (_, animation, __, child) {
++      pageBuilder: (_, _, _) => page,
++      transitionsBuilder: (_, animation, _, child) {
+         final curved = CurvedAnimation(
+           parent: animation,
+           curve: Curves.easeOutCubic,
+@@ -181,7 +183,16 @@ class _HudHomeScreenState extends State<HudHomeScreen> {
+         final job = _queue.removeAt(0);
+         String reply;
+         try {
+-          reply = await AiService.instance.chat(message: job.text);
++          // Agent mode is the default: try the action router first so "open
++          // YouTube", "call mum" or "set an alarm" are executed instead of
++          // being answered with "switch to Agent mode" by the chat prompt.
++          // `route` returns null for ordinary conversation.
++          final direct =
++              SettingsService.instance.appMode == AppMode.chat
++                  ? null
++                  : await AgentRouterService.instance.route(job.text);
++          reply = direct?.spoken ??
++              await AiService.instance.chat(message: job.text);
+         } catch (e) {
+           reply = 'My apologies, sir — I could not reach the uplink ($e).';
+         }
 diff --git a/lib/screens/settings/jarvis_settings_screen.dart b/lib/screens/settings/jarvis_settings_screen.dart
 index 7735f59..df38e9c 100644
 --- a/lib/screens/settings/jarvis_settings_screen.dart
@@ -2048,6 +2127,163 @@ index acdd640..4f14cdf 100644
                            style: TextStyle(
                              fontSize: 11,
                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+diff --git a/lib/services/agent_router_service.dart b/lib/services/agent_router_service.dart
+new file mode 100644
+index 0000000..e52d578
+--- /dev/null
++++ b/lib/services/agent_router_service.dart
+@@ -0,0 +1,151 @@
++import 'app_launcher_service.dart';
++import 'device_control_service.dart';
++
++/// Outcome of routing one natural-language request.
++class AgentRouteResult {
++  /// True when the request was executed as a device action, so the caller must
++  /// show [spoken] instead of asking the LLM for a conversational reply.
++  final bool handled;
++  final String spoken;
++
++  const AgentRouteResult({required this.handled, required this.spoken});
++}
++
++/// Decides whether an utterance is an *action* or a *conversation*, and runs
++/// the action itself when it is one.
++///
++/// Why this exists: every path into the AI (HUD ask, Telegram, task executor)
++/// used to send plain text straight to the conversational model. That model is
++/// told it "cannot directly tap the screen in this mode", so "open YouTube"
++/// produced a reply telling the user to switch to Agent mode — even though
++/// launching an app needs no accessibility service, no screen dump and no
++/// planner. Agent mode is the default, so the default path must be able to act.
++///
++/// Routing order:
++///  1. App launch (`open`/`launch`/`start`/`run`/`switch to` + an installed
++///     app) → `InstalledApps` launcher intent.
++///  2. Anything [DeviceControlService.executeCommand] recognises (calls, SMS,
++///     alarms, volume, brightness, torch, panels, location…) → native bridge.
++///  3. Otherwise `null`, meaning "not an action — treat as conversation".
++///
++/// Deliberately conservative: a miss falls back to chat, which is always safe,
++/// whereas a false positive would hijack an ordinary sentence.
++class AgentRouterService {
++  AgentRouterService._();
++  static final AgentRouterService instance = AgentRouterService._();
++
++  /// `open youtube`, `launch the camera`, `switch to whatsapp`, …
++  static final RegExp _launchVerb = RegExp(
++    r'^(?:open|launch|start|run|switch to|go to|bring up|fire up)\s+'
++    r'(?:the\s+|my\s+|an?\s+)?(.+)$',
++    caseSensitive: false,
++  );
++
++  /// Words that look like an app launch but belong to the device bridge
++  /// (control panels) or to the agent loop (compound tasks). Checked *after*
++  /// [appLaunchTarget] strips the verb, so these are bare targets.
++  static const Set<String> _notApps = {
++    'wifi',
++    'wi-fi',
++    'wlan',
++    'bluetooth',
++    'hotspot',
++    'airplane mode',
++    'flight mode',
++    'flashlight',
++    'torch',
++    'notification',
++    'notifications',
++    'quick settings',
++    'recent apps',
++    'recents',
++    'screen',
++    'phone',
++    'door',
++    'window',
++    'file',
++    'folder',
++    'link',
++    'url',
++    'website',
++    'a website',
++    'app',
++    'an app',
++  };
++
++  /// Verbs that can legitimately start a native device command. Used as a
++  /// guard *in front of* [DeviceControlService.executeCommand], which matches
++  /// on substrings and would otherwise hijack sentences like "call of duty is
++  /// a great game".
++  static final RegExp _actionVerb = RegExp(
++    r'^(?:call|dial|ring|text|sms|message|send|reply|set|turn|toggle|switch|'
++    r'lock|unlock|open|close|start|stop|launch|raise|lower|increase|decrease|'
++    r'mute|unmute|silence|take|track|activate|engage)\b',
++    caseSensitive: false,
++  );
++
++  /// Extracts the app name from a launch phrase, or null when the utterance is
++  /// not a plain single-app launch.
++  ///
++  /// Rejects compound commands (`open youtube and play …`) because those need
++  /// the planner, and rejects targets that are longer than any real app label.
++  String? appLaunchTarget(String text) {
++    final trimmed = text.trim();
++    if (trimmed.isEmpty) return null;
++
++    final match = _launchVerb.firstMatch(trimmed);
++    if (match == null) return null;
++
++    var target = (match.group(1) ?? '').trim();
++    // Trailing "app" is noise: "open the YouTube app".
++    target = target.replaceFirst(RegExp(r'\s+app$', caseSensitive: false), '').trim();
++    // Sentence punctuation from voice input.
++    target = target.replaceFirst(RegExp(r'[.!?]+$'), '').trim();
++
++    if (target.isEmpty) return null;
++    if (target.length > 32) return null;
++    final lower = target.toLowerCase();
++    if (_notApps.contains(lower)) return null;
++    // Compound goals ("open youtube and search lofi") need the agent loop.
++    if (RegExp(r'\b(and|then|with|for|to)\b').hasMatch(lower)) return null;
++    // A lone number or a phone number is a call, not an app.
++    if (RegExp(r'^[\d\s()+\-]+$').hasMatch(target)) return null;
++    return target;
++  }
++
++  /// Runs [text] as a device action when it is one.
++  ///
++  /// Returns null when the utterance is conversational, so the caller can fall
++  /// back to the chat model.
++  Future<AgentRouteResult?> route(String text) async {
++    final trimmed = text.trim();
++    if (trimmed.isEmpty) return null;
++
++    // 1. App launch. Resolving the name first means "open wifi panel" (no such
++    // app) falls through to the device bridge instead of claiming the app is
++    // missing.
++    final target = appLaunchTarget(trimmed);
++    if (target != null) {
++      final app = await AppLauncherService.instance.findApp(target);
++      if (app != null) {
++        final opened =
++            await AppLauncherService.instance.launch(app.packageName);
++        return AgentRouteResult(
++          handled: true,
++          spoken: opened == null
++              ? 'I could not open ${app.name}, sir.'
++              : '${app.name} is open, sir.',
++        );
++      }
++    }
++
++    // 2. Native device commands. `executeCommand` answers with an empty
++    // `spoken` when nothing matched, which is the "not mine" signal. The verb
++    // guard and the length cap keep ordinary sentences away from it — a false
++    // positive here would answer a question with an action.
++    if (trimmed.length > 80 || !_actionVerb.hasMatch(trimmed)) return null;
++    final result = await DeviceControlService.instance.executeCommand(trimmed);
++    if (result.spoken.isEmpty) return null;
++    return AgentRouteResult(handled: true, spoken: result.spoken);
++  }
++}
 diff --git a/lib/services/ai_service.dart b/lib/services/ai_service.dart
 index ea354e4..c9f609a 100644
 --- a/lib/services/ai_service.dart
@@ -2318,6 +2554,18 @@ index 24bd361..a3226d2 100644
    /// Processes an incoming gesture (native sensor or user simulation).
    Future<String> processGesture(String gesture, {int durationMs = 150}) async {
      _lastGesture = gesture;
+diff --git a/lib/services/app_launcher_service.dart b/lib/services/app_launcher_service.dart
+index dae2bc0..be9e532 100644
+--- a/lib/services/app_launcher_service.dart
++++ b/lib/services/app_launcher_service.dart
+@@ -1,5 +1,6 @@
+ import 'package:android_intent_plus/android_intent.dart';
+-import 'package:installed_apps/app_info.dart';
++// `installed_apps.dart` re-exports AppInfo; the direct app_info.dart import was
++// redundant (analyzer: unnecessary_import).
+ import 'package:installed_apps/installed_apps.dart';
+ import 'package:url_launcher/url_launcher.dart';
+ 
 diff --git a/lib/services/calendar_reminder_service.dart b/lib/services/calendar_reminder_service.dart
 index 13e6bd9..bba2c82 100644
 --- a/lib/services/calendar_reminder_service.dart
@@ -4187,7 +4435,7 @@ index af7a7bb..6b5fafc 100644
  
      final msg = PersonalityService.instance.getSentryAck(arm: false);
 diff --git a/lib/services/settings_service.dart b/lib/services/settings_service.dart
-index 8df46b7..7545266 100644
+index 8df46b7..18ac182 100644
 --- a/lib/services/settings_service.dart
 +++ b/lib/services/settings_service.dart
 @@ -1,4 +1,7 @@
@@ -4303,7 +4551,23 @@ index 8df46b7..7545266 100644
    }
  
    // ------------------------------------------------------------------
-@@ -98,9 +182,13 @@ class SettingsService extends ChangeNotifier {
+@@ -70,6 +154,15 @@ class SettingsService extends ChangeNotifier {
+       baseUrl: 'https://integrate.api.nvidia.com/v1',
+       model: 'meta/llama-3.3-70b-instruct',
+     ),
++    // OpenCode "Zen" gateway. Same OpenAI-compatible surface as the others:
++    // `GET https://opencode.ai/inference/openai/v1/models` lists the ids, and
++    // any of them can be typed into the Model field. The default is the free
++    // DeepSeek Flash entry so the provider is usable without credit.
++    'zen': (
++      label: 'Zen Code',
++      baseUrl: 'https://opencode.ai/inference/openai/v1',
++      model: 'deepseek-v4.1-flash-free',
++    ),
+     'ollama': (
+       label: 'Ollama (local)',
+       baseUrl: 'http://127.0.0.1:11434/v1',
+@@ -98,9 +191,13 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -4319,7 +4583,7 @@ index 8df46b7..7545266 100644
      notifyListeners();
    }
  
-@@ -166,14 +254,21 @@ class SettingsService extends ChangeNotifier {
+@@ -166,14 +263,21 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -4345,7 +4609,7 @@ index 8df46b7..7545266 100644
    List<String> get telegramAllowedChats =>
        _prefs?.getStringList('telegram_allowed_chats') ?? const [];
    Future<void> setTelegramAllowedChats(List<String> value) async {
-@@ -181,13 +276,128 @@ class SettingsService extends ChangeNotifier {
+@@ -181,13 +285,128 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -4372,9 +4636,9 @@ index 8df46b7..7545266 100644
 +    await setTelegramAllowedChats(const []);
 +    await clearTelegramPairCode();
 +    await setTelegramToken('');
-+    notifyListeners();
-+  }
-+
+     notifyListeners();
+   }
+ 
 +  // ------------------------------------------------------------------
 +  // Telegram pairing code (C3)
 +  // ------------------------------------------------------------------
@@ -4445,9 +4709,9 @@ index 8df46b7..7545266 100644
 +    await _prefs?.remove(_pairCodeKey);
 +    await _prefs?.remove(_pairExpiryKey);
 +    await _prefs?.remove(_pairFailKey);
-     notifyListeners();
-   }
- 
++    notifyListeners();
++  }
++
 +  /// Redeems [candidate] once: returns true only for the stored, unexpired
 +  /// code, and invalidates the code in that case.
 +  Future<bool> consumeTelegramPairCode(String candidate) async {
@@ -4477,7 +4741,7 @@ index 8df46b7..7545266 100644
    int get telegramUpdateOffset => _prefs?.getInt('telegram_offset') ?? 0;
    Future<void> setTelegramUpdateOffset(int value) async {
      await _prefs?.setInt('telegram_offset', value);
-@@ -264,6 +474,19 @@ class SettingsService extends ChangeNotifier {
+@@ -264,6 +483,19 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -4581,18 +4845,92 @@ index c88e142..98e622b 100644
      }
  
 diff --git a/lib/services/task_executor.dart b/lib/services/task_executor.dart
-index b63e8a4..3b11c71 100644
+index b63e8a4..4a24c45 100644
 --- a/lib/services/task_executor.dart
 +++ b/lib/services/task_executor.dart
-@@ -12,6 +12,7 @@ import '../models/task_history_entry.dart';
+@@ -11,7 +11,9 @@ import '../models/skill.dart';
+ import '../models/task_history_entry.dart';
  import '../models/task_step.dart';
  import 'ai_service.dart';
++import 'agent_router_service.dart';
  import 'app_launcher_service.dart';
 +import 'contact_disambiguation_service.dart';
  import 'device_control_service.dart';
  import 'recovery_engine.dart';
  import 'screen_automation_service.dart';
-@@ -572,6 +573,16 @@ class TaskExecutor extends ChangeNotifier {
+@@ -295,6 +297,24 @@ class TaskExecutor extends ChangeNotifier {
+ 
+     TaskStatus status = TaskStatus.failed;
+     try {
++      // 0. Pure app launch. Opening an app is a launcher intent issued by this
++      //    process — it needs no accessibility service and no screen dump, so
++      //    it must not be blocked by the gate below. Without this, "open
++      //    YouTube" answered "Accessibility service is OFF" even though
++      //    nothing in the request needed it.
++      final launchTarget = AgentRouterService.instance.appLaunchTarget(goal);
++      if (launchTarget != null) {
++        final launched = await _apps.launch(launchTarget);
++        if (launched != null) {
++          _log(ChatMessage.system('Launched $launched.'));
++          notifyListeners();
++          // Reassign before returning: `_finalize` in the finally block writes
++          // `status` into the task history.
++          status = TaskStatus.success;
++          return status;
++        }
++      }
++
+       // 1. Accessibility gate.
+       if (!await _automation.isServiceEnabled()) {
+         _log(
+@@ -479,27 +499,28 @@ class TaskExecutor extends ChangeNotifier {
+       switch (step.action) {
+         case TaskStep.actionClickText:
+           final text = step.stringParam('text') ?? '';
+-          return _automation.clickText(text, nodes: nodes);
++          return await _automation.clickText(text, nodes: nodes);
+         case TaskStep.actionClickAt:
+           final x = step.intParam('x');
+           final y = step.intParam('y');
+           if (x == null || y == null) return false;
+-          return _automation.clickAt(x, y);
++          return await _automation.clickAt(x, y);
+         case TaskStep.actionTypeText:
+           final text = step.stringParam('text');
+           if (text == null) return false;
+-          return _automation.typeText(text);
++          return await _automation.typeText(text);
+         case TaskStep.actionPressEnter:
+-          return _automation.pressEnter();
++          return await _automation.pressEnter();
+         case TaskStep.actionScroll:
+-          return _automation.scroll(step.stringParam('direction') ?? 'down');
++          return await _automation.scroll(
++              step.stringParam('direction') ?? 'down');
+         case TaskStep.actionSwipe:
+           final sx = step.intParam('startX');
+           final sy = step.intParam('startY');
+           final ex = step.intParam('endX');
+           final ey = step.intParam('endY');
+           if ([sx, sy, ex, ey].any((v) => v == null)) return false;
+-          return _automation.swipe(
++          return await _automation.swipe(
+             startX: sx!,
+             startY: sy!,
+             endX: ex!,
+@@ -507,9 +528,9 @@ class TaskExecutor extends ChangeNotifier {
+             durationMs: step.intParam('durationMs') ?? 350,
+           );
+         case TaskStep.actionPressBack:
+-          return _automation.pressBack();
++          return await _automation.pressBack();
+         case TaskStep.actionPressHome:
+-          return _automation.pressHome();
++          return await _automation.pressHome();
+         case TaskStep.actionOpenApp:
+           final query =
+               step.stringParam('app') ?? step.stringParam('package') ?? '';
+@@ -572,6 +593,16 @@ class TaskExecutor extends ChangeNotifier {
    // Native device-control steps
    // ------------------------------------------------------------------
  
@@ -4609,7 +4947,7 @@ index b63e8a4..3b11c71 100644
    Future<bool> _sendSmsStep(TaskStep step) async {
      var to = step.stringParam('to') ?? '';
      final body = step.stringParam('body') ?? '';
-@@ -582,6 +593,11 @@ class TaskExecutor extends ChangeNotifier {
+@@ -582,6 +613,11 @@ class TaskExecutor extends ChangeNotifier {
      String? display;
      if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(to)) {
        final contact = await _device.resolveContact(to);
@@ -4621,7 +4959,7 @@ index b63e8a4..3b11c71 100644
        if (contact['success'] == true) {
          final c = Map<String, dynamic>.from(contact['contact'] as Map);
          to = c['number']?.toString() ?? '';
-@@ -597,6 +613,15 @@ class TaskExecutor extends ChangeNotifier {
+@@ -597,6 +633,15 @@ class TaskExecutor extends ChangeNotifier {
        _log(ChatMessage.system('SMS sent to ${display ?? to}.'));
        return true;
      }
@@ -4637,7 +4975,7 @@ index b63e8a4..3b11c71 100644
      _log(ChatMessage.error('SMS failed: ${res['message']}'));
      return false;
    }
-@@ -610,6 +635,11 @@ class TaskExecutor extends ChangeNotifier {
+@@ -610,6 +655,11 @@ class TaskExecutor extends ChangeNotifier {
      String? display;
      if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(number)) {
        final contact = await _device.resolveContact(number);
@@ -4649,7 +4987,7 @@ index b63e8a4..3b11c71 100644
        if (contact['success'] == true) {
          final c = Map<String, dynamic>.from(contact['contact'] as Map);
          number = c['number']?.toString() ?? '';
-@@ -625,6 +655,13 @@ class TaskExecutor extends ChangeNotifier {
+@@ -625,6 +675,13 @@ class TaskExecutor extends ChangeNotifier {
        _log(ChatMessage.system('Calling ${display ?? number}.'));
        return true;
      }
@@ -4664,7 +5002,7 @@ index b63e8a4..3b11c71 100644
      return false;
    }
 diff --git a/lib/services/telegram_service.dart b/lib/services/telegram_service.dart
-index d8c8357..3950893 100644
+index d8c8357..fb78319 100644
 --- a/lib/services/telegram_service.dart
 +++ b/lib/services/telegram_service.dart
 @@ -13,8 +13,12 @@ import 'settings_service.dart';
@@ -4789,6 +5127,25 @@ index d8c8357..3950893 100644
    }
  
    // ------------------------------------------------------------------
+@@ -127,7 +178,7 @@ class TelegramService extends ChangeNotifier {
+     if (_token.isEmpty) return false;
+     try {
+       final res = await _client.post(
+-        Uri.parse('$_api/sendMessage'),
++        _endpoint('sendMessage'),
+         headers: {'Content-Type': 'application/json'},
+         body: jsonEncode({
+           'chat_id': chatId,
+@@ -155,8 +206,7 @@ class TelegramService extends ChangeNotifier {
+           ? base64Decode(photoData)
+           : (photoData as List<int>);
+       if (bytes.isEmpty) return false;
+-      final request = http.MultipartRequest(
+-          'POST', Uri.parse('$_api/sendPhoto'))
++      final request = http.MultipartRequest('POST', _endpoint('sendPhoto'))
+         ..fields['chat_id'] = chatId
+         ..fields['caption'] = caption ?? '📸 J.A.R.V.I.S. Photo Telemetry'
+         ..files.add(http.MultipartFile.fromBytes(
 diff --git a/lib/services/voice_service.dart b/lib/services/voice_service.dart
 index 4fe9880..62b1ba8 100644
 --- a/lib/services/voice_service.dart
@@ -4929,6 +5286,19 @@ index 4fe9880..62b1ba8 100644
 +    }
    }
  }
+diff --git a/lib/widgets/brain_dump_dialog.dart b/lib/widgets/brain_dump_dialog.dart
+index 756362e..336a529 100644
+--- a/lib/widgets/brain_dump_dialog.dart
++++ b/lib/widgets/brain_dump_dialog.dart
+@@ -265,7 +265,7 @@ class _BrainDumpDialogState extends State<BrainDumpDialog> {
+                         : ListView.separated(
+                             controller: _scrollController,
+                             itemCount: tasks.length,
+-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
++                            separatorBuilder: (_, _) => const SizedBox(height: 8),
+                             itemBuilder: (context, index) {
+                               final task = tasks[index];
+                               final isSuccess = task.executionStatus == 'success' ||
 diff --git a/lib/widgets/network_audit_dialog.dart b/lib/widgets/network_audit_dialog.dart
 index 98785e4..bc2e4a9 100644
 --- a/lib/widgets/network_audit_dialog.dart

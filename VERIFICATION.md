@@ -296,3 +296,71 @@ argument.
 Lesson recorded: the "static only" claim in §1 is exactly as strong as the checks
 listed there. Dependency resolution, compilation and lint were outside them —
 and one of them bit immediately.
+
+---
+
+## 9. Follow-up feature work (reported after the audit)
+
+Two runtime behaviours reported by the user after the merge. Both are code
+changes verified the same way as §1 — static reading only, **not compiled**.
+
+### 9.1 "Open an app" demanded switching to service/agent mode
+
+**Symptom.** Asking JARVIS to open an app produced a reply telling the user to
+switch to Agent mode first.
+
+**Cause (two independent gates, both real):**
+
+1. `HudHomeScreen._drain()` — the only path for a HUD ask — called
+   `AiService.instance.chat(message: …)` directly. That builder's system prompt
+   literally says *"You cannot directly tap the screen in this mode… inform them
+   they can switch to Agent or JARVIS mode"*, so every action request became an
+   instruction to change modes. No router sat in front of the chat model.
+2. `TaskExecutor.executeTask()` — the Telegram / background path — checked
+   `_automation.isServiceEnabled()` **before** doing anything, so even a plain
+   launcher intent failed with "Accessibility service is OFF".
+
+**Fix.**
+
+- New `AgentRouterService` (`lib/services/agent_router_service.dart`):
+  `route(text)` tries (a) app launch via `AppLauncherService`, then (b)
+  `DeviceControlService.executeCommand`, and returns `null` when the utterance
+  is conversation. `appLaunchTarget(text)` is the app-launch extractor.
+  - Guard rails against hijacking chat: an explicit launch-verb set, a target
+    length cap (32 chars), a rejection list for control-panel nouns
+    (`wifi`, `bluetooth`, `torch`, …), rejection of compound goals
+    (`… and/then/with/for/to …`), and — in front of `executeCommand` — an
+    action-verb allowlist plus an 80-character cap so "call of duty is a great
+    game" is not dialled.
+- `hud_home_screen.dart` routes every ask through the router first
+  (`AppMode.chat` still opts out) and only then falls back to the chat model.
+- `task_executor.dart` gains step **0**: a pure app launch is executed before
+  the accessibility gate, because launching an app needs no screen dump and no
+  accessibility service. `status` is reassigned before the early return so the
+  `finally { _finalize(...) }` records `success`, not `failed`.
+- Agent mode was already the default (`SettingsService.appMode` →
+  `'agent'`); the bug was that nothing honoured it. No default changed, so
+  existing installs keep their stored mode.
+
+**Not verified:** the app-name fuzzy match against a real device's installed
+apps, and whether `InstalledApps.startApp` succeeds from a background isolate.
+
+### 9.2 New provider: Zen Code
+
+Added to `SettingsService.providers` (rendered automatically by the settings
+"Model Provider Preset" chips):
+
+| key | label | base URL | default model |
+|---|---|---|---|
+| `zen` | Zen Code | `https://opencode.ai/inference/openai/v1` | `deepseek-v4.1-flash-free` |
+
+The endpoint and model ids were read from the live catalogue
+(`GET https://opencode.ai/inference/openai/v1/models`), not guessed: every entry
+there advertises `api.chat-completions.base_url` = that URL, so it is
+OpenAI-compatible and works with the existing `_postChatCompletion` /
+`_chatCompletionsUri` path with no special-casing. Any model id from that
+catalogue can be typed into the Model field; the free DeepSeek Flash entry is
+the default so the provider is usable without credit. Adding the entry required
+no change to `ai_service.dart` — the two provider-specific branches there
+(`ollama` for keyless local use, `openrouter` for its referer headers) do not
+apply to Zen.

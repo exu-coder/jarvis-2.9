@@ -11,6 +11,7 @@ import '../models/skill.dart';
 import '../models/task_history_entry.dart';
 import '../models/task_step.dart';
 import 'ai_service.dart';
+import 'agent_router_service.dart';
 import 'app_launcher_service.dart';
 import 'contact_disambiguation_service.dart';
 import 'device_control_service.dart';
@@ -296,6 +297,24 @@ class TaskExecutor extends ChangeNotifier {
 
     TaskStatus status = TaskStatus.failed;
     try {
+      // 0. Pure app launch. Opening an app is a launcher intent issued by this
+      //    process — it needs no accessibility service and no screen dump, so
+      //    it must not be blocked by the gate below. Without this, "open
+      //    YouTube" answered "Accessibility service is OFF" even though
+      //    nothing in the request needed it.
+      final launchTarget = AgentRouterService.instance.appLaunchTarget(goal);
+      if (launchTarget != null) {
+        final launched = await _apps.launch(launchTarget);
+        if (launched != null) {
+          _log(ChatMessage.system('Launched $launched.'));
+          notifyListeners();
+          // Reassign before returning: `_finalize` in the finally block writes
+          // `status` into the task history.
+          status = TaskStatus.success;
+          return status;
+        }
+      }
+
       // 1. Accessibility gate.
       if (!await _automation.isServiceEnabled()) {
         _log(
@@ -480,27 +499,28 @@ class TaskExecutor extends ChangeNotifier {
       switch (step.action) {
         case TaskStep.actionClickText:
           final text = step.stringParam('text') ?? '';
-          return _automation.clickText(text, nodes: nodes);
+          return await _automation.clickText(text, nodes: nodes);
         case TaskStep.actionClickAt:
           final x = step.intParam('x');
           final y = step.intParam('y');
           if (x == null || y == null) return false;
-          return _automation.clickAt(x, y);
+          return await _automation.clickAt(x, y);
         case TaskStep.actionTypeText:
           final text = step.stringParam('text');
           if (text == null) return false;
-          return _automation.typeText(text);
+          return await _automation.typeText(text);
         case TaskStep.actionPressEnter:
-          return _automation.pressEnter();
+          return await _automation.pressEnter();
         case TaskStep.actionScroll:
-          return _automation.scroll(step.stringParam('direction') ?? 'down');
+          return await _automation.scroll(
+              step.stringParam('direction') ?? 'down');
         case TaskStep.actionSwipe:
           final sx = step.intParam('startX');
           final sy = step.intParam('startY');
           final ex = step.intParam('endX');
           final ey = step.intParam('endY');
           if ([sx, sy, ex, ey].any((v) => v == null)) return false;
-          return _automation.swipe(
+          return await _automation.swipe(
             startX: sx!,
             startY: sy!,
             endX: ex!,
@@ -508,9 +528,9 @@ class TaskExecutor extends ChangeNotifier {
             durationMs: step.intParam('durationMs') ?? 350,
           );
         case TaskStep.actionPressBack:
-          return _automation.pressBack();
+          return await _automation.pressBack();
         case TaskStep.actionPressHome:
-          return _automation.pressHome();
+          return await _automation.pressHome();
         case TaskStep.actionOpenApp:
           final query =
               step.stringParam('app') ?? step.stringParam('package') ?? '';
