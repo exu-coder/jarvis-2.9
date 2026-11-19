@@ -1,5 +1,11 @@
 // PENDING RUNTIME: not executed — no Flutter/Dart SDK on this machine.
 //
+// `setMockInitialValues` is `@visibleForTesting`, so it is legal from a test
+// but the analyzer only recognises `test/**`, not this `tests/**` directory.
+// The directive keeps `flutter analyze` (a blocking CI gate) clean without
+// weakening the check for real code.
+// ignore_for_file: invalid_use_of_visible_for_testing_member
+//
 // Regression specifications for the security slice (C1, C2, C3, C4, C6, H5, H9).
 // Static verification only; every test below is unexecuted.
 //

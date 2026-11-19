@@ -178,7 +178,7 @@ class TelegramService extends ChangeNotifier {
     if (_token.isEmpty) return false;
     try {
       final res = await _client.post(
-        Uri.parse('$_api/sendMessage'),
+        _endpoint('sendMessage'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'chat_id': chatId,
@@ -206,8 +206,7 @@ class TelegramService extends ChangeNotifier {
           ? base64Decode(photoData)
           : (photoData as List<int>);
       if (bytes.isEmpty) return false;
-      final request = http.MultipartRequest(
-          'POST', Uri.parse('$_api/sendPhoto'))
+      final request = http.MultipartRequest('POST', _endpoint('sendPhoto'))
         ..fields['chat_id'] = chatId
         ..fields['caption'] = caption ?? '📸 J.A.R.V.I.S. Photo Telemetry'
         ..files.add(http.MultipartFile.fromBytes(

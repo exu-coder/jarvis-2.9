@@ -154,6 +154,15 @@ class SettingsService extends ChangeNotifier {
       baseUrl: 'https://integrate.api.nvidia.com/v1',
       model: 'meta/llama-3.3-70b-instruct',
     ),
+    // OpenCode "Zen" gateway. Same OpenAI-compatible surface as the others:
+    // `GET https://opencode.ai/inference/openai/v1/models` lists the ids, and
+    // any of them can be typed into the Model field. The default is the free
+    // DeepSeek Flash entry so the provider is usable without credit.
+    'zen': (
+      label: 'Zen Code',
+      baseUrl: 'https://opencode.ai/inference/openai/v1',
+      model: 'deepseek-v4.1-flash-free',
+    ),
     'ollama': (
       label: 'Ollama (local)',
       baseUrl: 'http://127.0.0.1:11434/v1',

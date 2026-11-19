@@ -34,6 +34,11 @@ FUN=(
   lib/services/phone_storage_service.dart
   test/widget_test.dart
   lib/services/contact_disambiguation_service.dart
+  # Agent-mode-by-default: the HUD ask path and the task executor route device
+  # actions instead of answering "switch to Agent mode".
+  lib/services/agent_router_service.dart
+  lib/screens/hud/hud_home_screen.dart
+  lib/services/app_launcher_service.dart
 )
 
 RES=(
@@ -51,9 +56,11 @@ RES=(
   lib/services/hermes_evolution_service.dart
   lib/screens/settings/jarvis_settings_screen.dart
   lib/widgets/network_audit_dialog.dart
+  lib/widgets/brain_dump_dialog.dart
   README.md
   .github/workflows/build.yml
   lib/screens/settings/permissions_screen.dart
+  analysis_options.yaml
 )
 
 emit_area() {
@@ -62,6 +69,9 @@ emit_area() {
   local n=0
   rm -rf "patches/$area/files"
   mkdir -p "patches/$area/files"
+  # Numbering shifts when a file is inserted, so drop the old set first —
+  # otherwise `15-README.md.patch` lingers next to `16-README.md.patch`.
+  rm -f patches/"$area"/*.patch
   for f in "${files[@]}"; do
     n=$((n+1))
     local base

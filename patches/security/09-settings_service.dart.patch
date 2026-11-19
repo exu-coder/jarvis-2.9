@@ -1,5 +1,5 @@
 diff --git a/lib/services/settings_service.dart b/lib/services/settings_service.dart
-index 8df46b7..7545266 100644
+index 8df46b7..18ac182 100644
 --- a/lib/services/settings_service.dart
 +++ b/lib/services/settings_service.dart
 @@ -1,4 +1,7 @@
@@ -115,7 +115,23 @@ index 8df46b7..7545266 100644
    }
  
    // ------------------------------------------------------------------
-@@ -98,9 +182,13 @@ class SettingsService extends ChangeNotifier {
+@@ -70,6 +154,15 @@ class SettingsService extends ChangeNotifier {
+       baseUrl: 'https://integrate.api.nvidia.com/v1',
+       model: 'meta/llama-3.3-70b-instruct',
+     ),
++    // OpenCode "Zen" gateway. Same OpenAI-compatible surface as the others:
++    // `GET https://opencode.ai/inference/openai/v1/models` lists the ids, and
++    // any of them can be typed into the Model field. The default is the free
++    // DeepSeek Flash entry so the provider is usable without credit.
++    'zen': (
++      label: 'Zen Code',
++      baseUrl: 'https://opencode.ai/inference/openai/v1',
++      model: 'deepseek-v4.1-flash-free',
++    ),
+     'ollama': (
+       label: 'Ollama (local)',
+       baseUrl: 'http://127.0.0.1:11434/v1',
+@@ -98,9 +191,13 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -131,7 +147,7 @@ index 8df46b7..7545266 100644
      notifyListeners();
    }
  
-@@ -166,14 +254,21 @@ class SettingsService extends ChangeNotifier {
+@@ -166,14 +263,21 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -157,7 +173,7 @@ index 8df46b7..7545266 100644
    List<String> get telegramAllowedChats =>
        _prefs?.getStringList('telegram_allowed_chats') ?? const [];
    Future<void> setTelegramAllowedChats(List<String> value) async {
-@@ -181,13 +276,128 @@ class SettingsService extends ChangeNotifier {
+@@ -181,13 +285,128 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  
@@ -184,9 +200,9 @@ index 8df46b7..7545266 100644
 +    await setTelegramAllowedChats(const []);
 +    await clearTelegramPairCode();
 +    await setTelegramToken('');
-+    notifyListeners();
-+  }
-+
+     notifyListeners();
+   }
+ 
 +  // ------------------------------------------------------------------
 +  // Telegram pairing code (C3)
 +  // ------------------------------------------------------------------
@@ -257,9 +273,9 @@ index 8df46b7..7545266 100644
 +    await _prefs?.remove(_pairCodeKey);
 +    await _prefs?.remove(_pairExpiryKey);
 +    await _prefs?.remove(_pairFailKey);
-     notifyListeners();
-   }
- 
++    notifyListeners();
++  }
++
 +  /// Redeems [candidate] once: returns true only for the stored, unexpired
 +  /// code, and invalidates the code in that case.
 +  Future<bool> consumeTelegramPairCode(String candidate) async {
@@ -289,7 +305,7 @@ index 8df46b7..7545266 100644
    int get telegramUpdateOffset => _prefs?.getInt('telegram_offset') ?? 0;
    Future<void> setTelegramUpdateOffset(int value) async {
      await _prefs?.setInt('telegram_offset', value);
-@@ -264,6 +474,19 @@ class SettingsService extends ChangeNotifier {
+@@ -264,6 +483,19 @@ class SettingsService extends ChangeNotifier {
      notifyListeners();
    }
  

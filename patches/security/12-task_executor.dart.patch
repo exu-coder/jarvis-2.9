@@ -1,16 +1,90 @@
 diff --git a/lib/services/task_executor.dart b/lib/services/task_executor.dart
-index b63e8a4..3b11c71 100644
+index b63e8a4..4a24c45 100644
 --- a/lib/services/task_executor.dart
 +++ b/lib/services/task_executor.dart
-@@ -12,6 +12,7 @@ import '../models/task_history_entry.dart';
+@@ -11,7 +11,9 @@ import '../models/skill.dart';
+ import '../models/task_history_entry.dart';
  import '../models/task_step.dart';
  import 'ai_service.dart';
++import 'agent_router_service.dart';
  import 'app_launcher_service.dart';
 +import 'contact_disambiguation_service.dart';
  import 'device_control_service.dart';
  import 'recovery_engine.dart';
  import 'screen_automation_service.dart';
-@@ -572,6 +573,16 @@ class TaskExecutor extends ChangeNotifier {
+@@ -295,6 +297,24 @@ class TaskExecutor extends ChangeNotifier {
+ 
+     TaskStatus status = TaskStatus.failed;
+     try {
++      // 0. Pure app launch. Opening an app is a launcher intent issued by this
++      //    process — it needs no accessibility service and no screen dump, so
++      //    it must not be blocked by the gate below. Without this, "open
++      //    YouTube" answered "Accessibility service is OFF" even though
++      //    nothing in the request needed it.
++      final launchTarget = AgentRouterService.instance.appLaunchTarget(goal);
++      if (launchTarget != null) {
++        final launched = await _apps.launch(launchTarget);
++        if (launched != null) {
++          _log(ChatMessage.system('Launched $launched.'));
++          notifyListeners();
++          // Reassign before returning: `_finalize` in the finally block writes
++          // `status` into the task history.
++          status = TaskStatus.success;
++          return status;
++        }
++      }
++
+       // 1. Accessibility gate.
+       if (!await _automation.isServiceEnabled()) {
+         _log(
+@@ -479,27 +499,28 @@ class TaskExecutor extends ChangeNotifier {
+       switch (step.action) {
+         case TaskStep.actionClickText:
+           final text = step.stringParam('text') ?? '';
+-          return _automation.clickText(text, nodes: nodes);
++          return await _automation.clickText(text, nodes: nodes);
+         case TaskStep.actionClickAt:
+           final x = step.intParam('x');
+           final y = step.intParam('y');
+           if (x == null || y == null) return false;
+-          return _automation.clickAt(x, y);
++          return await _automation.clickAt(x, y);
+         case TaskStep.actionTypeText:
+           final text = step.stringParam('text');
+           if (text == null) return false;
+-          return _automation.typeText(text);
++          return await _automation.typeText(text);
+         case TaskStep.actionPressEnter:
+-          return _automation.pressEnter();
++          return await _automation.pressEnter();
+         case TaskStep.actionScroll:
+-          return _automation.scroll(step.stringParam('direction') ?? 'down');
++          return await _automation.scroll(
++              step.stringParam('direction') ?? 'down');
+         case TaskStep.actionSwipe:
+           final sx = step.intParam('startX');
+           final sy = step.intParam('startY');
+           final ex = step.intParam('endX');
+           final ey = step.intParam('endY');
+           if ([sx, sy, ex, ey].any((v) => v == null)) return false;
+-          return _automation.swipe(
++          return await _automation.swipe(
+             startX: sx!,
+             startY: sy!,
+             endX: ex!,
+@@ -507,9 +528,9 @@ class TaskExecutor extends ChangeNotifier {
+             durationMs: step.intParam('durationMs') ?? 350,
+           );
+         case TaskStep.actionPressBack:
+-          return _automation.pressBack();
++          return await _automation.pressBack();
+         case TaskStep.actionPressHome:
+-          return _automation.pressHome();
++          return await _automation.pressHome();
+         case TaskStep.actionOpenApp:
+           final query =
+               step.stringParam('app') ?? step.stringParam('package') ?? '';
+@@ -572,6 +593,16 @@ class TaskExecutor extends ChangeNotifier {
    // Native device-control steps
    // ------------------------------------------------------------------
  
@@ -27,7 +101,7 @@ index b63e8a4..3b11c71 100644
    Future<bool> _sendSmsStep(TaskStep step) async {
      var to = step.stringParam('to') ?? '';
      final body = step.stringParam('body') ?? '';
-@@ -582,6 +593,11 @@ class TaskExecutor extends ChangeNotifier {
+@@ -582,6 +613,11 @@ class TaskExecutor extends ChangeNotifier {
      String? display;
      if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(to)) {
        final contact = await _device.resolveContact(to);
@@ -39,7 +113,7 @@ index b63e8a4..3b11c71 100644
        if (contact['success'] == true) {
          final c = Map<String, dynamic>.from(contact['contact'] as Map);
          to = c['number']?.toString() ?? '';
-@@ -597,6 +613,15 @@ class TaskExecutor extends ChangeNotifier {
+@@ -597,6 +633,15 @@ class TaskExecutor extends ChangeNotifier {
        _log(ChatMessage.system('SMS sent to ${display ?? to}.'));
        return true;
      }
@@ -55,7 +129,7 @@ index b63e8a4..3b11c71 100644
      _log(ChatMessage.error('SMS failed: ${res['message']}'));
      return false;
    }
-@@ -610,6 +635,11 @@ class TaskExecutor extends ChangeNotifier {
+@@ -610,6 +655,11 @@ class TaskExecutor extends ChangeNotifier {
      String? display;
      if (!RegExp(r'^[\d\s()+\-]+$').hasMatch(number)) {
        final contact = await _device.resolveContact(number);
@@ -67,7 +141,7 @@ index b63e8a4..3b11c71 100644
        if (contact['success'] == true) {
          final c = Map<String, dynamic>.from(contact['contact'] as Map);
          number = c['number']?.toString() ?? '';
-@@ -625,6 +655,13 @@ class TaskExecutor extends ChangeNotifier {
+@@ -625,6 +675,13 @@ class TaskExecutor extends ChangeNotifier {
        _log(ChatMessage.system('Calling ${display ?? number}.'));
        return true;
      }

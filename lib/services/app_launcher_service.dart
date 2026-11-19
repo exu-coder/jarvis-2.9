@@ -1,5 +1,6 @@
 import 'package:android_intent_plus/android_intent.dart';
-import 'package:installed_apps/app_info.dart';
+// `installed_apps.dart` re-exports AppInfo; the direct app_info.dart import was
+// redundant (analyzer: unnecessary_import).
 import 'package:installed_apps/installed_apps.dart';
 import 'package:url_launcher/url_launcher.dart';
 
