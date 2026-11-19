@@ -1,3 +1,6 @@
+// `ThemeMode` is used by the SettingsService theme test below; without this
+// import the analyzer reports `undefined_identifier` at the two call sites.
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
