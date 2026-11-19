@@ -1,8 +1,8 @@
 diff --git a/test/widget_test.dart b/test/widget_test.dart
-index 28d7769..e7c4107 100644
+index 28d7769..c554ccd 100644
 --- a/test/widget_test.dart
 +++ b/test/widget_test.dart
-@@ -1,11 +1,11 @@
+@@ -1,17 +1,23 @@
 +// `ThemeMode` is used by the SettingsService theme test below; without this
 +// import the analyzer reports `undefined_identifier` at the two call sites.
  import 'package:flutter/material.dart';
@@ -16,7 +16,19 @@ index 28d7769..e7c4107 100644
  import 'package:private_agent/services/jarvis_tools_service.dart';
  import 'package:private_agent/services/settings_service.dart';
  import 'package:private_agent/services/voice_service.dart';
-@@ -107,52 +107,51 @@ void main() {
+ import 'package:private_agent/services/workflow_service.dart';
+ 
+ void main() {
++  // `VoiceService.instance` constructs `FlutterTts`, which calls
++  // `setMethodCallHandler` in its constructor and asserts unless a binding
++  // exists. The widget tests that used to sit at the top of this file
++  // initialised it implicitly; with them gone, initialise it here.
++  TestWidgetsFlutterBinding.ensureInitialized();
++
+   group('TaskStep parsing', () {
+     test('parses a plain JSON object', () {
+       final step = TaskStep.tryParse(
+@@ -107,52 +113,51 @@ void main() {
      });
    });
  
@@ -88,7 +100,7 @@ index 28d7769..e7c4107 100644
 +    expect(settings.model, 'llama3.2');
 +
 +    await settings.setModel('qwen2.5:7b');
-     expect(settings.model, 'qwen2.5:7b');
++    expect(settings.model, 'qwen2.5:7b');
 +
 +    // Unrelated settings must not reset the model to the preset default. This
 +    // is the regression: every settings change rebuilds the screen, and a
@@ -96,7 +108,7 @@ index 28d7769..e7c4107 100644
 +    await settings.setAppMode(AppMode.jarvis);
 +    await settings.setUseSystemPrompt(true);
 +    await settings.setTemperature(1.1);
-+    expect(settings.model, 'qwen2.5:7b');
+     expect(settings.model, 'qwen2.5:7b');
 +
 +    // Re-selecting the same provider *is* an explicit reset, and only then.
 +    await settings.setProvider('ollama');
@@ -104,7 +116,7 @@ index 28d7769..e7c4107 100644
    });
  
    group('JARVIS & Hermes Workflow tests', () {
-@@ -183,22 +182,25 @@ void main() {
+@@ -183,22 +188,25 @@ void main() {
        final settings = SettingsService.instance;
        await settings.init();
  

@@ -12,6 +12,12 @@ import 'package:private_agent/services/voice_service.dart';
 import 'package:private_agent/services/workflow_service.dart';
 
 void main() {
+  // `VoiceService.instance` constructs `FlutterTts`, which calls
+  // `setMethodCallHandler` in its constructor and asserts unless a binding
+  // exists. The widget tests that used to sit at the top of this file
+  // initialised it implicitly; with them gone, initialise it here.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('TaskStep parsing', () {
     test('parses a plain JSON object', () {
       final step = TaskStep.tryParse(

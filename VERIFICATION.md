@@ -426,3 +426,27 @@ Only those two — nothing else in the file depended on `material.dart`; the
 widget-pumping tests were the rest of it. Import restored with a comment naming
 the call site. This is exactly the failure mode §1 warns about: a static edit
 looked complete and a compiler said otherwise. Run 6 is the verification.
+
+### 10.2 Consequence of removing the widget tests (run 6)
+
+Run 6: `Analyze` ✅, `Test` ❌ — **65 passed, 1 failed**:
+
+```
+❌ VoiceService sanitizes J.A.R.V.I.S. into natural spoken Jarvis
+   Failed assertion: ... Cannot set the method call handler before the binary
+   messenger has been initialized.
+   package:flutter_tts/flutter_tts.dart 341:14  new FlutterTts
+   package:private_agent/services/voice_service.dart 21:27  new VoiceService._
+   test/widget_test.dart 214:34
+```
+
+`VoiceService.instance` builds a `FlutterTts`, whose constructor calls
+`setMethodCallHandler` and therefore needs a binding. The two `testWidgets` that
+were removed initialised the binding implicitly (`testWidgets` calls
+`ensureInitialized()`); with them gone, the later plain `test()` that touches
+`VoiceService` had none.
+
+Fix: `TestWidgetsFlutterBinding.ensureInitialized()` as the first statement of
+`main()`, with a comment explaining the dependency. This is the second-order
+effect of the §10 rewrite — the tests are order-dependent in a way that was
+invisible while they hung.
